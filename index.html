@@ -334,53 +334,88 @@
           </ul>
         </div>
         <div class="patch-entry">
-          <div class="patch-version">v1.4 — Economy Update</div>
+          <div class="patch-version">v1.4 — Economy &amp; Menus</div>
           <ul class="patch-list">
-            <li>Added Credits currency system</li>
-            <li>Colonizing, farms &amp; fuel gens now cost credits</li>
-            <li>Food Market with fluctuating prices — check before selling</li>
-            <li>Food sell ratio slider in HUD converts harvest to credits</li>
+            <li>Added Credits currency — colonising costs 20¢, farms 50¢, fuel gens 80¢</li>
+            <li>Food Market with fluctuating prices (changes every 60s)</li>
+            <li>Food sell-ratio slider in HUD — split harvest between stock and credits</li>
             <li>Fixed: sell ratio now correctly scales with number of farms</li>
+            <li>Pause menu (P key or ⏸ button) — pause, access markets, quit to title</li>
+            <li>Patch Notes screen accessible from pause &amp; title screen</li>
           </ul>
         </div>
         <div class="patch-entry">
-          <div class="patch-version">v1.3 — Proximity &amp; Moons</div>
+          <div class="patch-version">v1.3.2 — Farm Harvesting</div>
           <ul class="patch-list">
-            <li>Farms only produce food when you are nearby (harvest range ring shown)</li>
-            <li>Moon sphere of influence reduced — no longer interferes with planet approach</li>
-            <li>Moon orbits pushed further from parent planet surface</li>
-            <li>Passive food consumption added (crew upkeep)</li>
-            <li>Fuel gens now cost 1 food/sec while refueling</li>
+            <li>Farms only produce food when ship is within harvest range</li>
+            <li>Green dashed harvest-range ring shown around farm planets</li>
+            <li>Farm slot label shows live harvesting/idle status in planet panel</li>
+          </ul>
+        </div>
+        <div class="patch-entry">
+          <div class="patch-version">v1.3.1 — Moon Balance</div>
+          <ul class="patch-list">
+            <li>Moon sphere of influence reduced to 40% of planet proximity</li>
+            <li>Moon interact range halved — no longer hijacks planet approach</li>
+            <li>Moon orbits start further from planet surface (60px min)</li>
+            <li>Wider spacing between multiple moons around the same planet</li>
+          </ul>
+        </div>
+        <div class="patch-entry">
+          <div class="patch-version">v1.3 — Proximity &amp; Resource Update</div>
+          <ul class="patch-list">
+            <li>Orbital co-movement: entering proximity locks ship to planet drift exactly</li>
+            <li>Planet collision physics — ship bounces off surfaces</li>
+            <li>Fuel gens cost 1 food/sec while actively refueling</li>
+            <li>Passive food consumption added (crew upkeep: 0.08/sec)</li>
+            <li>Food supply warning notification when reserves hit zero</li>
+          </ul>
+        </div>
+        <div class="patch-entry">
+          <div class="patch-version">v1.2.1 — Map Fixes</div>
+          <ul class="patch-list">
+            <li>Fixed map canvas only showing top strip — now fills panel correctly</li>
+            <li>Map reads wrapper dimensions after flex layout is applied</li>
+            <li>Map auto-fits to system scale on open via requestAnimationFrame</li>
+            <li>Mobile: map opens fullscreen; touch pan &amp; pinch-zoom supported</li>
           </ul>
         </div>
         <div class="patch-entry">
           <div class="patch-version">v1.2 — Solar System &amp; Map</div>
           <ul class="patch-list">
-            <li>Full solar system layout with named star at center</li>
-            <li>Planets orbit the star in real time at varying speeds</li>
-            <li>Moons orbit planets — colonizable with 1 slot each</li>
-            <li>Floating draggable map (M key) with zoom &amp; warp-click</li>
-            <li>Orbital co-movement: ship drifts with nearby planets</li>
-            <li>Planet collision physics with bounce</li>
+            <li>Full solar system layout — named star at centre, planets in orbital rings</li>
+            <li>Planets orbit in real time; moons orbit planets</li>
+            <li>Moons colonisable with 1 slot each; planet panel lists its moons</li>
+            <li>Floating draggable map (M) with scroll-to-zoom and click-to-warp</li>
+            <li>Off-screen arrows point to colonised planets &amp; moons</li>
           </ul>
         </div>
         <div class="patch-entry">
-          <div class="patch-version">v1.1 — Modules &amp; Economy</div>
+          <div class="patch-version">v1.1.1 — Mobile Support</div>
           <ul class="patch-list">
-            <li>Farm modules generate food (6s build time)</li>
+            <li>Virtual joystick (bottom-left) for steering &amp; thrust on touch screens</li>
+            <li>DOCK / BRAKE / MAP action buttons (bottom-right)</li>
+            <li>Planet panel slides up from bottom on small screens</li>
+            <li>Touch-specific controls shown on title screen for mobile users</li>
+          </ul>
+        </div>
+        <div class="patch-entry">
+          <div class="patch-version">v1.1 — Modules</div>
+          <ul class="patch-list">
+            <li>Farm modules generate food passively (6s build time)</li>
             <li>Fuel generator modules refuel ship when docked (8s build)</li>
-            <li>Module build progress shown in planet panel</li>
-            <li>Food sell slider removed from old system</li>
+            <li>Module build shown as progress bar in planet panel</li>
+            <li>Pulsing yellow dots above planet while module is under construction</li>
           </ul>
         </div>
         <div class="patch-entry">
           <div class="patch-version">v1.0 — Launch</div>
           <ul class="patch-list">
-            <li>Arcade ship controls with thrust &amp; rotation</li>
-            <li>Planet colonization with slot-based modules</li>
-            <li>Larger planets = more slots</li>
-            <li>Mobile touch controls with virtual joystick</li>
-            <li>Auto-save to browser localStorage</li>
+            <li>Arcade ship controls — thrust, rotate, brake</li>
+            <li>Planet colonisation with slot-based module system</li>
+            <li>Larger planets have more slots (up to 5)</li>
+            <li>Auto-save to browser localStorage every 5 seconds</li>
+            <li>Twinkle star field background</li>
           </ul>
         </div>
       </div>
@@ -432,7 +467,7 @@ const FUEL_DRAIN_BASE=0.012, FUEL_DRAIN_IDLE=0.0008;
 const FOOD_RATE=0.3, FUEL_REFUEL_RATE=1.2, FUEL_GEN_FOOD_COST=1.0;
 const FOOD_CONSUMPTION=0.08; // food/sec baseline human consumption
 const BUILD_TIME_FARM=6000, BUILD_TIME_FUEL=8000;
-const COST_FARM=30, COST_FUEL=80, COST_COLONIZE=20;  // credits
+const COST_FARM=80, COST_FUEL=120, COST_COLONIZE=50;  // credits
 const FOOD_SELL_RATE=0.5;  // credits per food unit sold per second
 const ROTATE_SPEED=0.055, THRUST=0.18, FRICTION=0.985, PROXIMITY=80;
 
