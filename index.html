@@ -137,6 +137,27 @@
   .patch-list{list-style:none;font-size:10px;line-height:1.9;color:var(--text);}
   .patch-list li::before{content:'▸ ';color:var(--accent2);}
   .patch-scroll{max-height:280px;overflow-y:auto;padding-right:4px;}
+  /* Bond market */
+  .bond-price-big{font-family:'Orbitron',monospace;font-size:28px;font-weight:900;
+    text-align:center;margin:8px 0;}
+  .bond-chart{display:flex;align-items:flex-end;gap:3px;height:60px;margin:10px 0;
+    padding:0 2px;border-bottom:1px solid var(--border);}
+  .bond-bar{flex:1;min-width:8px;border-radius:2px 2px 0 0;transition:height 0.3s;}
+  .bond-actions{display:flex;gap:8px;margin-top:12px;}
+  .bond-qty-input{flex:1;background:rgba(255,255,255,0.05);border:1px solid var(--border);
+    color:var(--text-bright);font-family:'Share Tech Mono',monospace;font-size:12px;
+    padding:6px 8px;text-align:center;outline:none;}
+  .bond-qty-input:focus{border-color:var(--accent);}
+  .bond-buy-btn{padding:7px 16px;background:rgba(0,212,255,0.12);border:1px solid var(--accent);
+    color:var(--accent);font-family:'Share Tech Mono',monospace;font-size:11px;cursor:pointer;}
+  .bond-buy-btn:hover{background:var(--accent);color:var(--bg);}
+  .bond-sell-btn{padding:7px 16px;background:rgba(255,45,85,0.12);border:1px solid var(--red);
+    color:var(--red);font-family:'Share Tech Mono',monospace;font-size:11px;cursor:pointer;}
+  .bond-sell-btn:hover{background:var(--red);color:var(--bg);}
+  .bond-sell-btn:disabled,.bond-buy-btn:disabled{opacity:0.3;cursor:not-allowed;}
+  .bond-stat-row{display:flex;justify-content:space-between;font-size:10px;
+    padding:4px 0;border-bottom:1px solid rgba(26,58,92,0.3);}
+  .bond-stat-val{color:var(--text-bright);}
 
   /* Mobile HUD adjustments */  /* Mobile HUD adjustments */
   @media(max-width:600px){
@@ -239,6 +260,7 @@
     <div class="overlay-btns">
       <button class="overlay-btn accent" onclick="togglePause()">▶ RESUME</button>
       <button class="overlay-btn" onclick="openMarket()">📈 FOOD MARKET</button>
+      <button class="overlay-btn" onclick="openBonds()">📊 SOLAR BONDS</button>
       <button class="overlay-btn" onclick="openPatchNotes()">📋 PATCH NOTES</button>
       <button class="overlay-btn danger" onclick="confirmQuit()">↩ QUIT TO TITLE</button>
     </div>
@@ -264,11 +286,53 @@
     <button class="overlay-btn" style="max-width:200px" onclick="closeMarket()">[ ESC ] CLOSE</button>
   </div>
 
+  <!-- BOND MARKET SCREEN -->
+  <div class="overlay-screen" id="bonds-screen">
+    <div class="overlay-title">SOLAR BONDS</div>
+    <div class="overlay-box" style="min-width:min(380px,92vw)">
+      <div style="font-size:10px;color:var(--text);margin-bottom:8px;line-height:1.6">
+        Solar Bonds are speculative instruments — prices shift every
+        <span style="color:var(--accent)">30 seconds</span>. Buy low, sell high.
+        They have no other use.
+      </div>
+      <!-- Live price -->
+      <div class="bond-price-big" id="bond-price-big">10.00¢</div>
+      <div id="bond-price-change" style="text-align:center;font-size:11px;margin-bottom:4px;color:var(--text)">—</div>
+      <!-- Mini chart -->
+      <div class="bond-chart" id="bond-chart"></div>
+      <!-- Stats -->
+      <div style="margin:8px 0">
+        <div class="bond-stat-row"><span>Bonds Held</span><span class="bond-stat-val" id="bonds-held-lbl">0</span></div>
+        <div class="bond-stat-row"><span>Portfolio Value</span><span class="bond-stat-val" id="bonds-value-lbl">0.00¢</span></div>
+        <div class="bond-stat-row"><span>Avg Buy Price</span><span class="bond-stat-val" id="bonds-avg-lbl">—</span></div>
+        <div class="bond-stat-row"><span>Unrealised P&amp;L</span><span class="bond-stat-val" id="bonds-pnl-lbl">—</span></div>
+        <div class="bond-stat-row"><span>Credits Available</span><span class="bond-stat-val" id="bonds-credits-lbl">200¢</span></div>
+      </div>
+      <!-- Buy / Sell -->
+      <div class="bond-actions">
+        <input type="number" class="bond-qty-input" id="bond-qty" min="1" value="1" placeholder="Qty">
+        <button class="bond-buy-btn" id="bond-buy-btn" onclick="buyBonds()">BUY</button>
+        <button class="bond-sell-btn" id="bond-sell-btn" onclick="sellBonds()">SELL</button>
+      </div>
+      <div id="bond-msg" style="font-size:10px;text-align:center;margin-top:8px;min-height:14px;color:var(--yellow)"></div>
+    </div>
+    <button class="overlay-btn" style="max-width:200px" onclick="closeBonds()">[ ESC ] CLOSE</button>
+  </div>
+
   <!-- PATCH NOTES SCREEN -->
   <div class="overlay-screen" id="patchnotes-screen">
     <div class="overlay-title">PATCH NOTES</div>
     <div class="overlay-box">
       <div class="patch-scroll">
+        <div class="patch-entry">
+          <div class="patch-version">v1.4.1 — Solar Bonds</div>
+          <ul class="patch-list">
+            <li>Added Solar Bond market — buy &amp; sell speculative bonds for profit</li>
+            <li>Bond prices fluctuate every 30 seconds with random surges &amp; crashes</li>
+            <li>Portfolio view shows unrealised P&amp;L, average buy price &amp; price chart</li>
+            <li>Bond market accessible from Pause menu</li>
+          </ul>
+        </div>
         <div class="patch-entry">
           <div class="patch-version">v1.4 — Economy Update</div>
           <ul class="patch-list">
@@ -368,7 +432,7 @@ const FUEL_DRAIN_BASE=0.012, FUEL_DRAIN_IDLE=0.0008;
 const FOOD_RATE=0.3, FUEL_REFUEL_RATE=1.2, FUEL_GEN_FOOD_COST=1.0;
 const FOOD_CONSUMPTION=0.08; // food/sec baseline human consumption
 const BUILD_TIME_FARM=6000, BUILD_TIME_FUEL=8000;
-const COST_FARM=30, COST_FUEL=80, COST_COLONIZE=20;  // credits
+const COST_FARM=80, COST_FUEL=120, COST_COLONIZE=50;  // credits
 const FOOD_SELL_RATE=0.5;  // credits per food unit sold per second
 const ROTATE_SPEED=0.055, THRUST=0.18, FRICTION=0.985, PROXIMITY=80;
 
@@ -480,6 +544,10 @@ function defaultState(){
     foodPrice:2.0,            // current market price (credits per food)
     priceHistory:[2.0],       // last N prices for chart
     priceTimer:0,             // ms until next price change
+    bondPrice:10.0,           // current solar bond price
+    bondHistory:[10.0],       // last N bond prices
+    bondTimer:0,              // ms until next bond price change
+    bondsOwned:0,             // number of bonds held
     star:sys.star,planets:sys.planets,moons:sys.moons,
     camera:{x:Math.cos(homeAngle)*homeOrbitR,y:Math.sin(homeAngle)*homeOrbitR-80},
     tick:0,
@@ -895,6 +963,7 @@ function updateHUD(){
   if(pl) pl.textContent=(state.foodPrice||2).toFixed(2);
   // keep market UI live if open
   if(document.getElementById('market-screen').classList.contains('open')) updateMarketUI();
+  if(document.getElementById('bonds-screen').classList.contains('open')) updateBondsUI();
   const fb=document.getElementById('fuel-bar');
   if(fp<20)fb.style.background='linear-gradient(90deg,#800,var(--red))';
   else if(fp<40)fb.style.background='linear-gradient(90deg,#a04000,#ff8c00)';
@@ -1198,10 +1267,121 @@ window.closePatchNotes = function(){
   document.getElementById('patchnotes-screen').classList.remove('open');
 };
 
+// ===== SOLAR BONDS =====
+window.openBonds = function(){
+  if(!state) return;
+  if(!state.bondPrice) state.bondPrice = 10;
+  if(!state.bondHistory) state.bondHistory = [10];
+  if(!state.bondsOwned) state.bondsOwned = 0;
+  if(!state.bondAvgPrice) state.bondAvgPrice = 0;
+  updateBondsUI();
+  document.getElementById('bonds-screen').classList.add('open');
+};
+window.closeBonds = function(){
+  document.getElementById('bonds-screen').classList.remove('open');
+};
+
+function updateBondsUI(){
+  if(!state) return;
+  const price = state.bondPrice || 10;
+  const hist  = state.bondHistory || [price];
+  const owned = state.bondsOwned || 0;
+  const avg   = state.bondAvgPrice || 0;
+  const portVal = owned * price;
+  const pnl   = owned > 0 ? (price - avg) * owned : null;
+
+  // Big price display
+  const bigEl = document.getElementById('bond-price-big');
+  const prev  = hist.length > 1 ? hist[hist.length-2] : price;
+  const up    = price >= prev;
+  bigEl.textContent = price.toFixed(2) + '¢';
+  bigEl.style.color = up ? 'var(--green)' : 'var(--red)';
+
+  // Price change line
+  const chg = price - prev;
+  const chgEl = document.getElementById('bond-price-change');
+  chgEl.textContent = (chg >= 0 ? '+' : '') + chg.toFixed(2) + '¢  (' + (chg/prev*100).toFixed(1) + '%)';
+  chgEl.style.color = chg >= 0 ? 'var(--green)' : 'var(--red)';
+
+  // Mini bar chart
+  const chartEl = document.getElementById('bond-chart');
+  chartEl.innerHTML = '';
+  const maxP = Math.max(...hist, 1);
+  const minP = Math.min(...hist, 0);
+  const range = maxP - minP || 1;
+  hist.forEach((p, i) => {
+    const h = Math.max(4, Math.round(((p - minP) / range) * 54) + 4);
+    const isLast = i === hist.length - 1;
+    const col = isLast ? (up ? 'var(--green)' : 'var(--red)') :
+                p > (hist[i-1]||p) ? '#2a6a3a' : '#6a2a2a';
+    const bar = document.createElement('div');
+    bar.className = 'bond-bar';
+    bar.style.cssText = `height:${h}px;background:${col};opacity:${0.4 + 0.6*(i/hist.length)}`;
+    chartEl.appendChild(bar);
+  });
+
+  // Stats
+  document.getElementById('bonds-held-lbl').textContent = owned;
+  document.getElementById('bonds-value-lbl').textContent = portVal.toFixed(2) + '¢';
+  document.getElementById('bonds-avg-lbl').textContent = owned > 0 ? avg.toFixed(2) + '¢' : '—';
+  const pnlEl = document.getElementById('bonds-pnl-lbl');
+  if(pnl !== null){
+    pnlEl.textContent = (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + '¢';
+    pnlEl.style.color = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+  } else {
+    pnlEl.textContent = '—'; pnlEl.style.color = 'var(--text)';
+  }
+  document.getElementById('bonds-credits-lbl').textContent = Math.floor(state.credits) + '¢';
+
+  // Timer countdown (approximate)
+  const secLeft = Math.max(0, Math.ceil((30000 - (state.bondTimer||0)) / 1000));
+  document.getElementById('bond-price-change').textContent += `   next in ${secLeft}s`;
+}
+
+window.buyBonds = function(){
+  if(!state) return;
+  const qty = parseInt(document.getElementById('bond-qty').value) || 1;
+  if(qty < 1){ bondMsg('Enter a valid quantity.'); return; }
+  const cost = qty * state.bondPrice;
+  if(state.credits < cost){ bondMsg(`Need ${cost.toFixed(2)}¢ — only ${Math.floor(state.credits)}¢ available.`); return; }
+  // Weighted average buy price
+  const prevOwned = state.bondsOwned || 0;
+  const prevAvg   = state.bondAvgPrice || 0;
+  state.bondAvgPrice = (prevAvg * prevOwned + state.bondPrice * qty) / (prevOwned + qty);
+  state.bondsOwned = prevOwned + qty;
+  state.credits -= cost;
+  bondMsg(`Bought ${qty} bond${qty>1?'s':''} for ${cost.toFixed(2)}¢.`, 'var(--green)');
+  updateBondsUI();
+  saveState();
+};
+
+window.sellBonds = function(){
+  if(!state) return;
+  const qty = Math.min(parseInt(document.getElementById('bond-qty').value)||1, state.bondsOwned||0);
+  if(qty < 1 || (state.bondsOwned||0) < 1){ bondMsg('No bonds to sell.'); return; }
+  const proceeds = qty * state.bondPrice;
+  const pnl = (state.bondPrice - (state.bondAvgPrice||0)) * qty;
+  state.bondsOwned -= qty;
+  if(state.bondsOwned === 0) state.bondAvgPrice = 0;
+  state.credits += proceeds;
+  const pnlStr = (pnl>=0?'+':'') + pnl.toFixed(2) + '¢';
+  bondMsg(`Sold ${qty} bond${qty>1?'s':''} for ${proceeds.toFixed(2)}¢ (P&L: ${pnlStr}).`,
+    pnl >= 0 ? 'var(--green)' : 'var(--red)');
+  updateBondsUI();
+  updateHUD();
+  saveState();
+};
+
+function bondMsg(msg, color='var(--yellow)'){
+  const el = document.getElementById('bond-msg');
+  el.textContent = msg; el.style.color = color;
+}
+
 // P key toggles pause, Escape closes overlays
 window.addEventListener('keydown', e=>{
   if((e.key==='p'||e.key==='P') && gameRunning && !gameOver) togglePause();
   if(e.key==='Escape'){
+    if(document.getElementById('bonds-screen').classList.contains('open')){ closeBonds(); return; }
     if(document.getElementById('market-screen').classList.contains('open')){ closeMarket(); return; }
     if(document.getElementById('patchnotes-screen').classList.contains('open')){ closePatchNotes(); return; }
     if(gamePaused){ togglePause(); return; }
@@ -1367,7 +1547,6 @@ function update(dt){
   const PRICE_INTERVAL = 60000;
   if(state.priceTimer >= PRICE_INTERVAL){
     state.priceTimer -= PRICE_INTERVAL;
-    // Random walk with mean reversion toward 2.0
     const drift = (2.0 - state.foodPrice) * 0.3;
     const noise = (Math.random() - 0.5) * 2.5;
     state.foodPrice = Math.max(0.3, Math.min(8.0, state.foodPrice + drift + noise));
@@ -1375,6 +1554,31 @@ function update(dt){
     state.priceHistory = [...(state.priceHistory||[]), state.foodPrice].slice(-12);
     const dir = state.priceHistory.length>1 && state.foodPrice > state.priceHistory[state.priceHistory.length-2];
     notify(`📈 Food price: ${state.foodPrice.toFixed(2)}¢/unit ${dir?'▲':'▼'}`, dir?'var(--green)':'var(--red)');
+  }
+
+  // Solar Bond price fluctuation — changes every 30 seconds
+  state.bondTimer = (state.bondTimer||0) + dt;
+  const BOND_INTERVAL = 30000;
+  if(state.bondTimer >= BOND_INTERVAL){
+    state.bondTimer -= BOND_INTERVAL;
+    const prevBond = state.bondPrice||10;
+    // More volatile than food: bigger swings, weak mean reversion toward 10
+    const bdrift = (10 - prevBond) * 0.1;
+    // Occasional spike/crash events
+    const eventRoll = Math.random();
+    const shock = eventRoll < 0.08 ? (Math.random()*8+4) :
+                  eventRoll < 0.16 ? -(Math.random()*8+4) : 0;
+    const bnoise = (Math.random()-0.5)*5 + shock;
+    state.bondPrice = Math.max(0.5, Math.min(50, prevBond + bdrift + bnoise));
+    state.bondPrice = Math.round(state.bondPrice * 100) / 100;
+    state.bondHistory = [...(state.bondHistory||[prevBond]), state.bondPrice].slice(-20);
+    const bup = state.bondPrice > prevBond;
+    if(Math.abs(state.bondPrice - prevBond) > 3){
+      notify(`📊 Solar Bond: ${state.bondPrice.toFixed(2)}¢ ${bup?'▲ SURGE':'▼ CRASH'}`, bup?'var(--green)':'var(--red)');
+    } else {
+      notify(`📊 Solar Bond: ${state.bondPrice.toFixed(2)}¢ ${bup?'▲':'▼'}`, bup?'var(--green)':'var(--red)');
+    }
+    if(document.getElementById('bonds-screen').classList.contains('open')) updateBondsUI();
   }
   // Refuel
   for(const b of allB){
