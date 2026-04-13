@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VOID COLONY — Space Explorer</title>
-<link rel="icon" href="favicon.png" type="image/png">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
   :root {
@@ -96,6 +95,7 @@
   .act-btn small{font-size:8px;letter-spacing:0.5px;opacity:0.7;}
   #btn-interact{border-color:var(--accent);color:var(--accent);}
   #btn-brake{border-color:#ff8c00;color:#ff8c00;}
+  #btn-fire{border-color:var(--red);color:var(--red);}
   #btn-map-touch{border-color:var(--text);width:48px;height:48px;}
   #touch-controls.visible{display:block;}
 
@@ -184,6 +184,11 @@
   <div id="hud">
     <div class="hud-panel" id="hud-top-left">
       <div class="stat-row">
+        <div class="hud-label">❤ Hull Integrity</div>
+        <div class="hud-value" id="hp-val">100</div>
+        <div class="bar-wrap"><div class="bar-fill" id="hp-bar" style="width:100%;background:linear-gradient(90deg,#800,var(--red))"></div></div>
+      </div>
+      <div class="stat-row">
         <div class="hud-label">⛽ Fuel</div>
         <div class="hud-value" id="fuel-val">100</div>
         <div class="bar-wrap"><div class="bar-fill fuel-bar" id="fuel-bar" style="width:100%"></div></div>
@@ -235,6 +240,7 @@
       <div id="joystick-knob"></div>
     </div>
     <div id="action-btns">
+      <div class="act-btn" id="btn-fire"><span>🔴</span><small>FIRE</small></div>
       <div class="act-btn" id="btn-interact"><span>⬡</span><small>DOCK</small></div>
       <div class="act-btn" id="btn-brake"><span>◼</span><small>BRAKE</small></div>
       <div class="act-btn" id="btn-map-touch"><span>🗺</span></div>
@@ -325,6 +331,19 @@
     <div class="overlay-title">PATCH NOTES</div>
     <div class="overlay-box">
       <div class="patch-scroll">
+        <div class="patch-entry">
+          <div class="patch-version">v1.5 — Enemy Raiders &amp; Combat</div>
+          <ul class="patch-list">
+            <li>Enemy raider ships spawn every 45s (up to 5 at a time)</li>
+            <li>Enemies fly to planets, capture them, and destroy your modules</li>
+            <li>SPACE / 🔴 button fires cyan laser bolts at enemies</li>
+            <li>Destroying an enemy earns 40¢ bounty</li>
+            <li>Hull integrity bar added — take damage from enemy fire</li>
+            <li>Enemy-owned planets shown with red orbit ring</li>
+            <li>Reclaim captured planets for 80¢ from the planet panel</li>
+            <li>Enemy ships display HP bar and claim-progress bar in world</li>
+          </ul>
+        </div>
         <div class="patch-entry">
           <div class="patch-version">v1.4.1 — Solar Bonds</div>
           <ul class="patch-list">
@@ -433,6 +452,7 @@
       <div><span class="key">S/↓</span> — Brake</div>
       <div><span class="key">E</span> — Interact with nearby planet/moon</div>
       <div><span class="key">M</span> — Toggle solar system map</div>
+      <div><span class="key">SPACE</span> — Fire laser</div>
     </div>
     <div class="controls-box" id="controls-box-touch" style="display:none">
       <div>🕹 <span style="color:var(--accent)">Left joystick</span> — Steer &amp; thrust</div>
@@ -471,6 +491,19 @@ const BUILD_TIME_FARM=6000, BUILD_TIME_FUEL=8000;
 const COST_FARM=30, COST_FUEL=70, COST_COLONIZE=20;  // credits
 const FOOD_SELL_RATE=0.5;  // credits per food unit sold per second
 const ROTATE_SPEED=0.055, THRUST=0.18, FRICTION=0.985, PROXIMITY=80;
+
+// ===== COMBAT CONSTANTS =====
+const LASER_SPEED       = 9;      // px/frame
+const LASER_LIFE        = 90;     // frames
+const LASER_COOLDOWN    = 220;    // ms between player shots
+const ENEMY_LASER_CD    = 900;    // ms between enemy shots
+const PLAYER_HEALTH     = 100;
+const ENEMY_HEALTH      = 60;
+const LASER_DAMAGE      = 20;     // per hit
+const ENEMY_SPAWN_INTERVAL = 45000; // ms between new enemy spawns
+const ENEMY_SPEED       = 0.10;   // thrust
+const ENEMY_AGGRO_RANGE = 500;    // px — distance at which enemy targets player
+const RECLAIM_COST      = 80;     // credits to reclaim a taken-over planet
 
 // ===== SOLAR SYSTEM GENERATION =====
 const STAR_CONFIGS=[
@@ -577,6 +610,12 @@ function defaultState(){
   return {
     ship:{x:Math.cos(homeAngle)*homeOrbitR,y:Math.sin(homeAngle)*homeOrbitR-80,vx:0,vy:0,angle:0},
     fuel:MAX_FUEL,food:20,credits:200,foodSellRatio:0,
+    playerHp:PLAYER_HEALTH,
+    enemies:[],
+    playerLasers:[],
+    enemyLasers:[],
+    lastPlayerShot:0,
+    enemySpawnTimer:0,
     foodPrice:2.0,            // current market price (credits per food)
     priceHistory:[2.0],       // last N prices for chart
     priceTimer:0,             // ms until next price change
@@ -631,6 +670,7 @@ const keys={};
 window.addEventListener('keydown',e=>{
   keys[e.key]=true;
   if((e.key==='m'||e.key==='M')&&gameRunning&&!gameOver)toggleMap();
+  if(e.key===' '&&gameRunning&&!gameOver&&!gamePaused){ e.preventDefault(); fireLaser(); }
 });
 window.addEventListener('keyup',e=>{keys[e.key]=false;});
 
@@ -698,6 +738,11 @@ function enableTouchControls(){
     ()=>{ keys['_brake']=true; },
     ()=>{ keys['_brake']=false; }
   );
+
+  document.getElementById('btn-fire').addEventListener('touchstart',e=>{
+    e.preventDefault(); fireLaser();
+  },{passive:false});
+  document.getElementById('btn-fire').addEventListener('click',()=>fireLaser());
 
   document.getElementById('btn-interact').addEventListener('touchstart',e=>{
     e.preventDefault();
@@ -824,9 +869,24 @@ function openPlanetPanel(body,type){
     const par=state.planets.find(p=>p.id===body.parentId);
     parentInfo=`<br>Orbits: <span style="color:var(--accent)">${par?par.name:'?'}</span>`;
   }
-  panelInfo.innerHTML=`Status: ${ctext}<br>Type: ${type==='moon'?'Moon':'Planet'} (${sizeClass(body.radius)})${parentInfo}<br>Slots: ${body.slots.length}`;
+  const enemyWarn = body.enemyOwned?'<br><span style="color:var(--red)">⚠ ENEMY CONTROLLED</span>':''
+  panelInfo.innerHTML=`Status: ${ctext}${enemyWarn}<br>Type: ${type==='moon'?'Moon':'Planet'} (${sizeClass(body.radius)})${parentInfo}<br>Slots: ${body.slots.length}`;
   renderSlots(body);
   btnColonize.style.display=body.colonized?'none':'block';
+
+  // Show reclaim button for enemy-owned planets
+  let reclaimBtn = document.getElementById('btn-reclaim');
+  if(!reclaimBtn){
+    reclaimBtn = document.createElement('button');
+    reclaimBtn.id='btn-reclaim';reclaimBtn.className='btn-colonize';
+    reclaimBtn.style.borderColor='var(--red)';reclaimBtn.style.color='var(--red)';
+    reclaimBtn.style.marginBottom='6px';
+    document.getElementById('planet-panel').insertBefore(reclaimBtn,
+      document.getElementById('btn-colonize'));
+  }
+  reclaimBtn.textContent=`⚔ Reclaim Planet (${RECLAIM_COST}¢)`;
+  reclaimBtn.style.display=body.enemyOwned?'block':'none';
+  reclaimBtn.onclick=()=>reclaimPlanet(body.id);
 
   const moonsSection=document.getElementById('panel-moons-section');
   const moonsList=document.getElementById('panel-moons-list');
@@ -1000,6 +1060,13 @@ function updateHUD(){
   // keep market UI live if open
   if(document.getElementById('market-screen').classList.contains('open')) updateMarketUI();
   if(document.getElementById('bonds-screen').classList.contains('open')) updateBondsUI();
+  const hp = state.playerHp !== undefined ? state.playerHp : PLAYER_HEALTH;
+  document.getElementById('hp-val').textContent = Math.ceil(hp);
+  document.getElementById('hp-bar').style.width = Math.max(0,(hp/PLAYER_HEALTH)*100)+'%';
+  const hpBar = document.getElementById('hp-bar');
+  const hpPct = hp/PLAYER_HEALTH;
+  hpBar.style.background = hpPct>0.5?'linear-gradient(90deg,#006600,var(--green))':
+    hpPct>0.25?'linear-gradient(90deg,#886600,var(--yellow))':'linear-gradient(90deg,#800,var(--red))';
   const fb=document.getElementById('fuel-bar');
   if(fp<20)fb.style.background='linear-gradient(90deg,#800,var(--red))';
   else if(fp<40)fb.style.background='linear-gradient(90deg,#a04000,#ff8c00)';
@@ -1424,6 +1491,218 @@ window.addEventListener('keydown', e=>{
   }
 });
 
+// ===== ENEMY & COMBAT SYSTEM =====
+
+function spawnEnemy(){
+  if(!state) return;
+  // Pick a random planet that isn't Homeworld as a starting target
+  const targets = state.planets.filter(p=>p.name!=='Homeworld');
+  if(!targets.length) return;
+  const target = targets[Math.floor(Math.random()*targets.length)];
+  // Spawn at the edge of the system, away from the star
+  const spawnAngle = Math.random()*Math.PI*2;
+  const spawnDist  = 1800 + Math.random()*400;
+  state.enemies.push({
+    id: Math.random().toString(36).slice(2),
+    x: Math.cos(spawnAngle)*spawnDist,
+    y: Math.sin(spawnAngle)*spawnDist,
+    vx:0, vy:0, angle:0,
+    hp: ENEMY_HEALTH,
+    maxHp: ENEMY_HEALTH,
+    targetPlanetId: target.id,  // primary objective: go claim a planet
+    state: 'roam',              // roam | attack | claim | retreat
+    lastShot: 0,
+    claimTimer: 0,              // progress toward claiming a slot (ms)
+    claimSlotIdx: -1,
+  });
+}
+
+function makeEnemyLaser(e){
+  return {
+    x:e.x+Math.cos(e.angle)*14,
+    y:e.y+Math.sin(e.angle)*14,
+    vx:Math.cos(e.angle)*LASER_SPEED + e.vx*0.3,
+    vy:Math.sin(e.angle)*LASER_SPEED + e.vy*0.3,
+    life:LASER_LIFE,
+    fromEnemy:true,
+  };
+}
+
+function makePlayerLaser(s){
+  return {
+    x:s.x+Math.cos(s.angle)*16,
+    y:s.y+Math.sin(s.angle)*16,
+    vx:Math.cos(s.angle)*LASER_SPEED + s.vx*0.3,
+    vy:Math.sin(s.angle)*LASER_SPEED + s.vy*0.3,
+    life:LASER_LIFE,
+    fromEnemy:false,
+  };
+}
+
+function fireLaser(){
+  if(!state||!gameRunning||gameOver||gamePaused) return;
+  const now = performance.now();
+  if(now - (state.lastPlayerShot||0) < LASER_COOLDOWN) return;
+  state.lastPlayerShot = now;
+  state.playerLasers.push(makePlayerLaser(state.ship));
+}
+
+function updateEnemies(dt, now){
+  if(!state) return;
+  const s = state.ship;
+  const sec = dt/1000;
+
+  // ── Spawn timer ──────────────────────────────────────────────────
+  state.enemySpawnTimer = (state.enemySpawnTimer||0) + dt;
+  if(state.enemySpawnTimer >= ENEMY_SPAWN_INTERVAL){
+    state.enemySpawnTimer -= ENEMY_SPAWN_INTERVAL;
+    if((state.enemies||[]).length < 5) spawnEnemy();
+  }
+
+  state.enemies = (state.enemies||[]).filter(e => e.hp > 0);
+
+  for(const e of state.enemies){
+    // ── Decide behaviour ─────────────────────────────────────────
+    const distToPlayer = Math.hypot(s.x-e.x, s.y-e.y);
+    const aggroRange = ENEMY_AGGRO_RANGE;
+
+    if(distToPlayer < aggroRange){
+      e.state = 'attack';
+    } else if(e.state !== 'claim'){
+      e.state = 'roam';
+    }
+
+    // ── Steering ─────────────────────────────────────────────────
+    let targetX, targetY;
+    if(e.state === 'attack'){
+      // Lead the player slightly
+      targetX = s.x + s.vx*20;
+      targetY = s.y + s.vy*20;
+    } else {
+      // Head to target planet
+      const tp = state.planets.find(p=>p.id===e.targetPlanetId) || state.planets[0];
+      targetX = tp.x; targetY = tp.y;
+    }
+
+    const wantAngle = Math.atan2(targetY-e.y, targetX-e.x);
+    let da = wantAngle - e.angle;
+    while(da > Math.PI)  da -= Math.PI*2;
+    while(da < -Math.PI) da += Math.PI*2;
+    e.angle += Math.sign(da)*Math.min(Math.abs(da), ROTATE_SPEED*1.6);
+
+    // Thrust toward target
+    const distToTarget = Math.hypot(targetX-e.x, targetY-e.y);
+    if(distToTarget > 80){
+      e.vx += Math.cos(e.angle)*ENEMY_SPEED;
+      e.vy += Math.sin(e.angle)*ENEMY_SPEED;
+    }
+    e.vx *= 0.97; e.vy *= 0.97;
+    const espd = Math.hypot(e.vx,e.vy);
+    if(espd>6){e.vx=e.vx/espd*6;e.vy=e.vy/espd*6;}
+    e.x += e.vx; e.y += e.vy;
+
+    // ── Enemy fires at player if in range ────────────────────────
+    if(e.state==='attack' && distToPlayer < aggroRange*0.9){
+      if(now - e.lastShot > ENEMY_LASER_CD){
+        e.lastShot = now;
+        state.enemyLasers.push(makeEnemyLaser(e));
+      }
+    }
+
+    // ── Claiming logic: when near a planet ───────────────────────
+    for(const p of [...state.planets,...state.moons]){
+      const ppos = p.isMoon ? getMoonPos(p) : {x:p.x,y:p.y};
+      if(Math.hypot(e.x-ppos.x,e.y-ppos.y) > p.radius+PROXIMITY*1.2) continue;
+      if(e.state==='attack') continue; // busy fighting
+
+      // Find a claimable slot: uncolonized or player-owned active module
+      const slotIdx = p.slots.findIndex(sl=>sl!==null&&typeof sl==='string');
+      const emptyIdx = p.slots.findIndex(sl=>sl===null);
+
+      if(!p.colonized){
+        // Try to colonize it
+        e.state='claim'; e.claimTimer=(e.claimTimer||0)+dt;
+        if(e.claimTimer>=8000){
+          e.claimTimer=0;
+          p.colonized=true; p.enemyOwned=true;
+          notify(`⚠ ${p.name} captured by enemy!`,'var(--red)');
+        }
+      } else if(p.enemyOwned && emptyIdx!==-1){
+        // Enemy building a module on its own planet
+        e.state='claim'; e.claimTimer=(e.claimTimer||0)+dt;
+        if(e.claimTimer>=10000){
+          e.claimTimer=0;
+          p.slots[emptyIdx]='farm'; // enemies build farms
+          notify(`⚠ Enemy expanded on ${p.name}!`,'var(--red)');
+          // pick new target
+          const newTargets=state.planets.filter(pp=>!pp.enemyOwned&&pp.name!=='Homeworld');
+          if(newTargets.length) e.targetPlanetId=newTargets[Math.floor(Math.random()*newTargets.length)].id;
+        }
+      } else if(!p.enemyOwned && slotIdx!==-1){
+        // Sabotage a player module
+        e.state='claim'; e.claimTimer=(e.claimTimer||0)+dt;
+        if(e.claimTimer>=12000){
+          e.claimTimer=0;
+          p.slots[slotIdx]=null;
+          notify(`⚠ Enemy destroyed a module on ${p.name}!`,'var(--red)');
+        }
+      } else {
+        e.claimTimer=0;
+      }
+    }
+  }
+
+  // ── Move & age lasers ────────────────────────────────────────────
+  const allLasers = [...(state.playerLasers||[]), ...(state.enemyLasers||[])];
+  for(const l of allLasers){ l.x+=l.vx; l.y+=l.vy; l.life--; }
+
+  // ── Player lasers hit enemies ─────────────────────────────────────
+  state.playerLasers = (state.playerLasers||[]).filter(l=>{
+    if(l.life<=0) return false;
+    for(const e of state.enemies){
+      if(Math.hypot(l.x-e.x,l.y-e.y)<12){
+        e.hp -= LASER_DAMAGE;
+        if(e.hp<=0){
+          notify('💥 Enemy destroyed!','var(--green)');
+          state.credits += 40; // bounty
+        }
+        return false;
+      }
+    }
+    return true;
+  });
+
+  // ── Enemy lasers hit player ──────────────────────────────────────
+  state.enemyLasers = (state.enemyLasers||[]).filter(l=>{
+    if(l.life<=0) return false;
+    if(Math.hypot(l.x-s.x,l.y-s.y)<14){
+      state.playerHp = Math.max(0, (state.playerHp||PLAYER_HEALTH) - LASER_DAMAGE);
+      notify(`🛸 Hull hit! ${Math.round(state.playerHp)} HP remaining`, 'var(--red)');
+      if(state.playerHp<=0) triggerGameOver();
+      return false;
+    }
+    return true;
+  });
+}
+
+// Reclaim a planet taken by enemies
+window.reclaimPlanet = function(planetId){
+  if(!state) return;
+  if(state.credits < RECLAIM_COST){
+    notify(`Need ${RECLAIM_COST}¢ to reclaim — only ${Math.floor(state.credits)}¢ available`,'var(--red)');
+    return;
+  }
+  const p = [...state.planets,...state.moons].find(b=>b.id===planetId);
+  if(!p||!p.enemyOwned){ notify('Planet is not enemy-controlled.','var(--text)'); return; }
+  state.credits -= RECLAIM_COST;
+  p.enemyOwned = false;
+  p.slots = p.slots.map(()=>null); // clear enemy modules
+  notify(`✅ ${p.name} reclaimed! (-${RECLAIM_COST}¢)`,'var(--accent)');
+  updateHUD();
+  saveState();
+  if(activePlanet===p) openPlanetPanel(p, p.isMoon?'moon':'planet');
+};
+
 // ===== GAME LOOP =====
 let lastTime=0, thrustParticles=[], exhaustTimer=0;
 
@@ -1447,6 +1726,10 @@ function update(dt){
   }
 
   tickBuilding(dt);
+  updateEnemies(dt, performance.now());
+
+  // Player shoot
+  if(keys[' ']||keys['_fire']){ fireLaser(); }
 
   if(keys['ArrowLeft']||keys['a']||keys['A'])s.angle-=ROTATE_SPEED;
   if(keys['ArrowRight']||keys['d']||keys['D'])s.angle+=ROTATE_SPEED;
@@ -1736,6 +2019,81 @@ function draw(){
   });
 
   drawShip(ctx,state.ship);
+
+  // Draw player lasers
+  for(const l of (state.playerLasers||[])){
+    const alpha = l.life/LASER_LIFE;
+    ctx.save();
+    const lg=ctx.createRadialGradient(l.x,l.y,0,l.x,l.y,4);
+    lg.addColorStop(0,`rgba(0,255,255,${alpha})`);
+    lg.addColorStop(1,'transparent');
+    ctx.beginPath();ctx.arc(l.x,l.y,4,0,Math.PI*2);ctx.fillStyle=lg;ctx.fill();
+    // bolt line
+    ctx.beginPath();ctx.moveTo(l.x,l.y);ctx.lineTo(l.x-l.vx*3,l.y-l.vy*3);
+    ctx.strokeStyle=`rgba(0,220,255,${alpha})`;ctx.lineWidth=2;ctx.stroke();
+    ctx.restore();
+  }
+
+  // Draw enemy lasers
+  for(const l of (state.enemyLasers||[])){
+    const alpha = l.life/LASER_LIFE;
+    ctx.save();
+    const lg=ctx.createRadialGradient(l.x,l.y,0,l.x,l.y,4);
+    lg.addColorStop(0,`rgba(255,60,60,${alpha})`);
+    lg.addColorStop(1,'transparent');
+    ctx.beginPath();ctx.arc(l.x,l.y,4,0,Math.PI*2);ctx.fillStyle=lg;ctx.fill();
+    ctx.beginPath();ctx.moveTo(l.x,l.y);ctx.lineTo(l.x-l.vx*3,l.y-l.vy*3);
+    ctx.strokeStyle=`rgba(255,50,50,${alpha})`;ctx.lineWidth=2;ctx.stroke();
+    ctx.restore();
+  }
+
+  // Draw enemies
+  for(const e of (state.enemies||[])){
+    ctx.save();ctx.translate(e.x,e.y);ctx.rotate(e.angle);
+
+    // Enemy glow
+    const eg=ctx.createRadialGradient(0,0,0,0,0,18);
+    eg.addColorStop(0,'rgba(255,60,60,0.2)');eg.addColorStop(1,'transparent');
+    ctx.beginPath();ctx.arc(0,0,18,0,Math.PI*2);ctx.fillStyle=eg;ctx.fill();
+
+    // Enemy ship body (red, angular)
+    ctx.beginPath();
+    ctx.moveTo(13,0);ctx.lineTo(-9,-8);ctx.lineTo(-5,0);ctx.lineTo(-9,8);ctx.closePath();
+    ctx.fillStyle='#200808';ctx.strokeStyle='#ff2d55';ctx.lineWidth=1.5;
+    ctx.fill();ctx.stroke();
+    // Cockpit
+    ctx.beginPath();ctx.ellipse(3,0,4,3,0,0,Math.PI*2);
+    ctx.fillStyle='rgba(255,45,85,0.6)';ctx.fill();
+    // Wings
+    ctx.beginPath();ctx.moveTo(-3,-8);ctx.lineTo(-11,-15);ctx.lineTo(-11,-5);ctx.closePath();
+    ctx.fillStyle='#3a0808';ctx.strokeStyle='#ff2d55';ctx.lineWidth=1;ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.moveTo(-3,8);ctx.lineTo(-11,15);ctx.lineTo(-11,5);ctx.closePath();
+    ctx.fill();ctx.stroke();
+
+    ctx.restore();
+
+    // HP bar above enemy
+    const hpFrac = e.hp/e.maxHp;
+    const bw=30, bh=4;
+    ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(e.x-bw/2,e.y-28,bw,bh);
+    ctx.fillStyle=hpFrac>0.5?'#39ff14':hpFrac>0.25?'#ffd700':'#ff2d55';
+    ctx.fillRect(e.x-bw/2,e.y-28,bw*hpFrac,bh);
+    ctx.strokeStyle='rgba(255,45,85,0.5)';ctx.lineWidth=0.5;
+    ctx.strokeRect(e.x-bw/2,e.y-28,bw,bh);
+
+    // Claim progress bar if claiming
+    if(e.state==='claim'&&e.claimTimer>0){
+      ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(e.x-bw/2,e.y-22,bw,bh);
+      ctx.fillStyle='#ff8c00';
+      ctx.fillRect(e.x-bw/2,e.y-22,bw*(e.claimTimer/12000),bh);
+    }
+
+    // Enemy label
+    ctx.fillStyle='rgba(255,45,85,0.8)';
+    ctx.font='9px "Share Tech Mono"';ctx.textAlign='center';
+    ctx.fillText('HOSTILE',e.x,e.y+22);
+  }
+
   ctx.restore();
 
   drawOffscreenIndicators(ctx,camX,camY);
@@ -1789,11 +2147,13 @@ function drawPlanet(ctx,p,tick){
   }
   ctx.restore();
   if(p.colonized){
+    const ringCol = p.enemyOwned?'rgba(255,45,85,0.7)':'rgba(0,212,255,0.6)';
+    const dotCol  = p.enemyOwned?'#ff2d55':'#00d4ff';
     ctx.beginPath();ctx.arc(p.x,p.y,p.radius+8,0,Math.PI*2);
-    ctx.strokeStyle='rgba(0,212,255,0.6)';ctx.lineWidth=1.5;ctx.stroke();
+    ctx.strokeStyle=ringCol;ctx.lineWidth=1.5;ctx.stroke();
     const oa=tick*0.03;
     ctx.beginPath();ctx.arc(p.x+Math.cos(oa)*(p.radius+8),p.y+Math.sin(oa)*(p.radius+8),2.5,0,Math.PI*2);
-    ctx.fillStyle='#00d4ff';ctx.fill();
+    ctx.fillStyle=dotCol;ctx.fill();
     const am=p.slots.filter(Boolean);
     am.forEach((mod,i)=>{
       const bx=p.x-am.length*8+i*16,by=p.y-p.radius-18;
