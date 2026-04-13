@@ -502,6 +502,7 @@ const BUILD_TIME_FARM=6000, BUILD_TIME_FUEL=8000;
 const COST_FARM=30, COST_FUEL=70, COST_COLONIZE=20;  // credits
 const FOOD_SELL_RATE=0.5;  // credits per food unit sold per second
 const ROTATE_SPEED=0.055, THRUST=0.18, FRICTION=0.985, PROXIMITY=80;
+const ACCESSIBLE_HEALTH_REGEN_RATE = 2.0;
 
 // ===== COMBAT CONSTANTS =====
 const LASER_SPEED       = 9;      // px/frame
@@ -1972,6 +1973,13 @@ function update(dt){
   }
 
   state.fuel=Math.max(0,state.fuel);
+  
+  // Gradual health regeneration over time
+  const HEALTH_REGEN_RATE = ACCESSIBLE_HEALTH_REGEN_RATE; // HP per second
+  if(state.playerHp < PLAYER_HEALTH){
+    state.playerHp = Math.min(PLAYER_HEALTH, state.playerHp + HEALTH_REGEN_RATE * sec);
+  }
+  
   thrustParticles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.life-=sec*2.5;p.vx*=0.95;p.vy*=0.95;});
   thrustParticles=thrustParticles.filter(p=>p.life>0);
   state.camera.x+=(s.x-state.camera.x)*0.08;
