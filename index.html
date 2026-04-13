@@ -211,7 +211,8 @@
       </div>
     </div>
     <div class="hud-panel" id="hud-bottom">
-      <span style="font-size:10px;letter-spacing:1px;color:var(--text)">WASD/ARROWS: THRUST &nbsp;|&nbsp; E: INTERACT &nbsp;|&nbsp; M: MAP &nbsp;|&nbsp; P: PAUSE</span>
+      <span style="font-size:10px;letter-spacing:1px;color:var(--text)">WASD: THRUST &nbsp;|&nbsp; SPACE: FIRE &nbsp;|&nbsp; C: MOUSE AIM &nbsp;|&nbsp; E: INTERACT &nbsp;|&nbsp; M: MAP &nbsp;|&nbsp; P: PAUSE</span>
+      &nbsp;&nbsp;<span id="mouse-aim-indicator" style="font-size:10px;color:var(--accent);letter-spacing:1px;font-family:'Orbitron',monospace"></span>
     </div>
     <button id="pause-btn" onclick="togglePause()">⏸ PAUSE</button>
   </div>
@@ -331,6 +332,15 @@
     <div class="overlay-title">PATCH NOTES</div>
     <div class="overlay-box">
       <div class="patch-scroll">
+        <div class="patch-entry">
+          <div class="patch-version">v1.5.1 — Mouse Aim Mode</div>
+          <ul class="patch-list">
+            <li>Press C to toggle mouse aim — ship rotates to face your cursor</li>
+            <li>Click to fire in mouse aim mode (crosshair cursor shown)</li>
+            <li>Dotted targeting line drawn from ship to cursor</li>
+            <li>Thrust and brake controls unchanged in mouse mode</li>
+          </ul>
+        </div>
         <div class="patch-entry">
           <div class="patch-version">v1.5 — Enemy Raiders &amp; Combat</div>
           <ul class="patch-list">
@@ -453,6 +463,7 @@
       <div><span class="key">E</span> — Interact with nearby planet/moon</div>
       <div><span class="key">M</span> — Toggle solar system map</div>
       <div><span class="key">SPACE</span> — Fire laser</div>
+      <div><span class="key">C</span> — Toggle mouse aim (click to fire)</div>
     </div>
     <div class="controls-box" id="controls-box-touch" style="display:none">
       <div>🕹 <span style="color:var(--accent)">Left joystick</span> — Steer &amp; thrust</div>
@@ -667,9 +678,36 @@ function drawStars(){
 
 // ===== INPUT =====
 const keys={};
+let mouseAimMode = false;
+let mouseWorldX = 0, mouseWorldY = 0;  // cursor in world-space
+
+window.addEventListener('mousemove', e=>{
+  if(!state) return;
+  // Convert screen → world
+  mouseWorldX = (e.clientX - W/2) + state.camera.x;
+  mouseWorldY = (e.clientY - H/2) + state.camera.y;
+});
+
+// Left-click fires in mouse mode
+window.addEventListener('mousedown', e=>{
+  if(e.button===0 && mouseAimMode && gameRunning && !gameOver && !gamePaused
+     && !e.target.closest('#planet-panel,#map-overlay,#hud,#pause-screen,#market-screen,#bonds-screen,#patchnotes-screen')){
+    fireLaser();
+  }
+});
+
+function toggleMouseAim(){
+  mouseAimMode = !mouseAimMode;
+  document.getElementById('game-canvas').style.cursor = mouseAimMode ? 'crosshair' : 'default';
+  notify(mouseAimMode ? '🖱 Mouse aim ON — click to fire' : '⌨ Keyboard control', mouseAimMode ? 'var(--accent)' : 'var(--text)');
+  const ind = document.getElementById('mouse-aim-indicator');
+  if(ind) ind.textContent = mouseAimMode ? '🖱 MOUSE AIM' : '';
+}
+
 window.addEventListener('keydown',e=>{
   keys[e.key]=true;
   if((e.key==='m'||e.key==='M')&&gameRunning&&!gameOver)toggleMap();
+  if((e.key==='c'||e.key==='C')&&gameRunning&&!gameOver&&!gamePaused) toggleMouseAim();
   if(e.key===' '&&gameRunning&&!gameOver&&!gamePaused){ e.preventDefault(); fireLaser(); }
 });
 window.addEventListener('keyup',e=>{keys[e.key]=false;});
@@ -1731,8 +1769,17 @@ function update(dt){
   // Player shoot
   if(keys[' ']||keys['_fire']){ fireLaser(); }
 
-  if(keys['ArrowLeft']||keys['a']||keys['A'])s.angle-=ROTATE_SPEED;
-  if(keys['ArrowRight']||keys['d']||keys['D'])s.angle+=ROTATE_SPEED;
+  if(mouseAimMode){
+    // Smoothly snap ship angle toward the mouse cursor in world-space
+    const wantAngle = Math.atan2(mouseWorldY - s.y, mouseWorldX - s.x);
+    let da = wantAngle - s.angle;
+    while(da > Math.PI)  da -= Math.PI*2;
+    while(da < -Math.PI) da += Math.PI*2;
+    s.angle += da * 0.18;  // fast but smooth — feels snappy without teleporting
+  } else {
+    if(keys['ArrowLeft']||keys['a']||keys['A'])s.angle-=ROTATE_SPEED;
+    if(keys['ArrowRight']||keys['d']||keys['D'])s.angle+=ROTATE_SPEED;
+  }
 
   if(keys['ArrowUp']||keys['w']||keys['W']){
     s.vx+=Math.cos(s.angle)*THRUST;s.vy+=Math.sin(s.angle)*THRUST;
@@ -1937,6 +1984,7 @@ function update(dt){
 
 function triggerGameOver(){
   gameOver=true;
+  if(mouseAimMode) toggleMouseAim(); // reset cursor
   let c=0,f=0,g=0;
   for(const b of[...state.planets,...state.moons]){
     if(b.colonized)c++;
@@ -2017,6 +2065,27 @@ function draw(){
     g.addColorStop(1,`rgba(255,40,0,0)`);
     ctx.beginPath();ctx.arc(p.x,p.y,p.size,0,Math.PI*2);ctx.fillStyle=g;ctx.fill();
   });
+
+  // Mouse aim: draw targeting line from ship to cursor
+  if(mouseAimMode){
+    const sx=state.ship.x, sy=state.ship.y;
+    const dist=Math.hypot(mouseWorldX-sx,mouseWorldY-sy);
+    const nx=(mouseWorldX-sx)/dist, ny=(mouseWorldY-sy)/dist;
+    // Dotted line
+    ctx.save();
+    ctx.setLineDash([6,8]);
+    ctx.beginPath();ctx.moveTo(sx+nx*18,sy+ny*18);ctx.lineTo(mouseWorldX,mouseWorldY);
+    ctx.strokeStyle='rgba(0,212,255,0.35)';ctx.lineWidth=1;ctx.stroke();
+    ctx.setLineDash([]);
+    // Crosshair at cursor
+    const cr=10;
+    ctx.strokeStyle='rgba(0,212,255,0.8)';ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.moveTo(mouseWorldX-cr,mouseWorldY);ctx.lineTo(mouseWorldX+cr,mouseWorldY);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(mouseWorldX,mouseWorldY-cr);ctx.lineTo(mouseWorldX,mouseWorldY+cr);ctx.stroke();
+    ctx.beginPath();ctx.arc(mouseWorldX,mouseWorldY,cr*0.6,0,Math.PI*2);
+    ctx.strokeStyle='rgba(0,212,255,0.5)';ctx.lineWidth=1;ctx.stroke();
+    ctx.restore();
+  }
 
   drawShip(ctx,state.ship);
 
