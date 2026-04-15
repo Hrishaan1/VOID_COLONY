@@ -466,7 +466,7 @@
   <div id="title-screen">
     <h1>VOID COLONY</h1>
     <div class="sub">Space Colonization Sim</div>
-    <div class="controls-box" id="controls-box-kb" style="">
+    <div class="controls-box" id="controls-box-kb">
       <div><span class="key">W/↑</span> — Thrust Forward</div>
       <div><span class="key">A/D / ←/→</span> — Rotate Ship</div>
       <div><span class="key">S/↓</span> — Brake</div>
@@ -509,7 +509,7 @@ const FUEL_DRAIN_BASE=0.012, FUEL_DRAIN_IDLE=0.0008;
 const FOOD_RATE=0.3, FUEL_REFUEL_RATE=1.2, FUEL_GEN_FOOD_COST=1.0;
 const FOOD_CONSUMPTION=0.08; // food/sec baseline human consumption
 const BUILD_TIME_FARM=6000, BUILD_TIME_FUEL=8000;
-const COST_FARM=80, COST_FUEL=120, COST_COLONIZE=50;  // credits
+const COST_FARM=30, COST_FUEL=70, COST_COLONIZE=20;  // credits
 const FOOD_SELL_RATE=0.5;  // credits per food unit sold per second
 const ROTATE_SPEED=0.055, THRUST=0.18, FRICTION=0.985, PROXIMITY=80;
 const HEALTH_REGEN_RATE = 2.0; // HP per second
@@ -716,12 +716,16 @@ function toggleMouseAim(){
 }
 
 window.addEventListener('keydown',e=>{
-  keys[e.key]=true;
+  if(e.code==='Space'||e.key===' ') keys[' ']=true;
+  else keys[e.key]=true;
   if((e.key==='m'||e.key==='M')&&gameRunning&&!gameOver)toggleMap();
   if((e.key==='c'||e.key==='C')&&gameRunning&&!gameOver&&!gamePaused) toggleMouseAim();
-  if(e.key===' '&&gameRunning&&!gameOver&&!gamePaused){ e.preventDefault(); fireLaser(); }
+  if((e.code==='Space'||e.key===' ')&&gameRunning&&!gameOver&&!gamePaused){ e.preventDefault(); fireLaser(); }
 });
-window.addEventListener('keyup',e=>{keys[e.key]=false;});
+window.addEventListener('keyup',e=>{
+  if(e.code==='Space'||e.key===' ') keys[' ']=false;
+  else keys[e.key]=false;
+});
 
 // ===== TOUCH / MOBILE =====
 const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
@@ -1802,9 +1806,6 @@ function update(dt){
 
   tickBuilding(dt);
   updateEnemies(dt, performance.now());
-
-  // Player shoot
-  if(keys[' ']||keys['_fire']){ fireLaser(); }
 
   if(mouseAimMode){
     // Smoothly snap ship angle toward the mouse cursor in world-space
