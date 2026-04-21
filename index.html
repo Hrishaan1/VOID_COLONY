@@ -704,6 +704,7 @@ window.addEventListener('mousedown', e=>{
   if(e.button===0 && mouseAimMode && gameRunning && !gameOver && !gamePaused
      && !e.target.closest('#planet-panel,#map-overlay,#hud,#pause-screen,#market-screen,#bonds-screen,#patchnotes-screen')){
     fireLaser();
+    console.log("mousedown registered")
   }
 });
 
@@ -720,7 +721,7 @@ window.addEventListener('keydown',e=>{
   else keys[e.key]=true;
   if((e.key==='m'||e.key==='M')&&gameRunning&&!gameOver)toggleMap();
   if((e.key==='c'||e.key==='C')&&gameRunning&&!gameOver&&!gamePaused) toggleMouseAim();
-  if((e.code==='Space'||e.key===' ')&&gameRunning&&!gameOver&&!gamePaused){ e.preventDefault(); fireLaser(); }
+  if((e.code==='Space'||e.key===' ')&&gameRunning&&!gameOver&&!gamePaused){ e.preventDefault(); fireLaser(); console.log("space keypress detected"); }
 });
 window.addEventListener('keyup',e=>{
   if(e.code==='Space'||e.key===' ') keys[' ']=false;
@@ -1591,6 +1592,7 @@ function makeEnemyLaser(e){
 }
 
 function makePlayerLaser(s){
+  console.log("Spawned Laser Successfully!");
   return {
     x:s.x+Math.cos(s.angle)*16,
     y:s.y+Math.sin(s.angle)*16,
@@ -2367,6 +2369,7 @@ document.getElementById('btn-start').addEventListener('click',()=>{
   const saved=loadState();
   if(saved){state=saved;notify('Progress restored!','var(--green)');}
   else state=defaultState();
+  state.lastPlayerShot = 0; // Reset laser cooldown timer for new game session
   document.getElementById('title-screen').style.display='none';
   gameRunning=true;gameOver=false;mapOpen=false;updateHUD();
   // Sync sell slider with loaded state
@@ -2379,7 +2382,9 @@ document.getElementById('btn-start').addEventListener('click',()=>{
 });
 
 document.getElementById('btn-restart').addEventListener('click',()=>{
-  state=defaultState();gameRunning=true;gameOver=false;thrustParticles=[];
+  state=defaultState();
+  state.lastPlayerShot = 0; // Reset laser cooldown timer for new game session
+  gameRunning=true;gameOver=false;thrustParticles=[];
   document.getElementById('gameover-screen').style.display='none';updateHUD();
   if(isMobile) enableTouchControls();
 });
