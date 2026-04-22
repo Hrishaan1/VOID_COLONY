@@ -1,32 +1,36 @@
-# VOID COLONY — Space Colonization Simulator
-A high-fidelity, browser-based space exploration and economic simulation built with vanilla JavaScript and HTML5 Canvas.
+# VOID COLONY — Space Combat & Colonization Simulator
+
+A high-fidelity, browser-based space exploration, economic, and combat simulation built with vanilla JavaScript and HTML5 Canvas.
 
 ## 🌌 Overview
-In VOID COLONY, you take command of a lone colony ship. Your mission is to expand across a procedurally generated solar system, establishing outposts on planets and moons while managing critical resources. The game features a "living" solar system where every celestial body follows real-time orbital paths.
+In **VOID COLONY**, you command a lone colony ship in a "living" solar system. Balance the high-stakes economy of fuel and food while defending your territory from enemy raiders that actively seek to capture your planets and destroy your modules.
 
-## 🚀 Key Features
-- Procedural Universe: Every new game generates a unique star system with custom planet palettes, cloud formations, and moon systems.
-- Orbital Mechanics: Physics-based flight including thrust, friction, and orbital co-movement (the ship drifts naturally with a planet's gravity when nearby).
-- Module System: * Farms: Produce food (requires proximity to harvest).
-- Fuel Generators: Refuel your ship at the cost of food modules.
-- Dynamic Economy: A built-in market where food prices fluctuate every 60 seconds. Use the HUD slider to manage your sell-ratio.
-- Cross-Platform: Full keyboard support (WASD) and a custom-coded virtual joystick for mobile/touch devices.
-- Data Persistence: Automatic save/load functionality using localStorage.
+## ⚔️ Combat & Defense Features (New!)
+* **Laser Weaponry:** Engage enemies with high-velocity cyan laser bolts (SPACE or Mouse Click). Includes a 220ms cooldown system for balanced firing.
+* **Enemy Raider AI:** Raiders spawn every 45 seconds, roaming the system to capture planets. They are peaceful unless provoked or unless you attempt to reclaim a stolen colony.
+* **Mouse Aim Mode:** Press `C` to toggle a precision targeting mode where the ship rotates to face your cursor, complete with a dotted targeting line and crosshair.
+* **Hull Integrity:** Your ship features a persistent health bar. Take damage from enemy fire and benefit from a slow automatic regeneration (2 HP/sec).
+
+## 📈 Economic & Planetary Simulation
+* **Credits Economy:** Everything has a cost—from colonizing (20¢) to building specialized modules like Farms (50¢) or Fuel Generators (80¢).
+* **Dynamic Food Market:** Food prices fluctuate every 60s. Use the HUD slider to set your "Sell Ratio" and automate your income based on market trends.
+* **Solar Bonds:** A speculative mini-game where you can buy/sell bonds on a 30s volatility cycle to build your credit reserves.
+* **Proximity Harvesting:** Farm modules require you to remain within a specific orbital range to successfully harvest resources.
 
 ## 🕹️ Controls
-| Action | Keyboard| Touch |
-| ---- | ---- | ---- | 
-| Thrust | `W` / `Up` | Joystick Up |
-| Rotate | `A` / `D` | Joystick Left/Right | 
-| Brake | `S` / `Down` | Brake Button |
-| Interact | `E` | Dock Button |
-| Map | `M` | Map icon |
-| Pause | `P` | Pause Icon |
+| Action | Keyboard | Mouse / Touch |
+| :--- | :--- | :--- |
+| **Thrust / Rotate** | `WASD` | Joystick (Mobile) |
+| **Precision Aim** | `C` (Toggle) | Mouse Movement |
+| **Fire Laser** | `Space` | Mouse Click / 🔴 Button |
+| **Interact/Dock** | `E` | ⬡ DOCK Button |
+| **Map** | `M` | 🗺 MAP Button |
+| **Pause** | `P` | ⏸ PAUSE Button |
 
 ## 🛠️ Technical Implementation
-- Double Canvas Rendering: Uses a background canvas for static starfields and a foreground canvas for high-frequency physics updates.
-- State Management: Centralized state object for easy serialization and save-game handling.
-- Math-Heavy Logic: Implements trigonometry for orbital positioning ($$x=cos(θ) × radius$$) and collision detection with bounce physics.
+* **State Persistence:** Automatically saves your fleet status, credits, and colony progress to `localStorage` every 5 seconds.
+* **Procedural Systems:** Generates unique star systems with custom palettes, moon systems, and real-time orbital trigonometry.
+* **Layered Rendering:** Uses dual HTML5 Canvases to handle high-frequency physics updates and background star-fields separately.
 
 ## 📜 License
-This project is open-source. Feel free to fork, modify, and expand your own galaxy!
+Open-source under the MIT License. Contributions and forks are welcome!
