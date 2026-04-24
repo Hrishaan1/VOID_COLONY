@@ -231,7 +231,7 @@
       <div class="map-legend-item"><div class="map-legend-dot" style="background:#00d4ff"></div>Planet</div>
       <div class="map-legend-item"><div class="map-legend-dot" style="background:#39ff14"></div>Moon (colonized)</div>
       <div class="map-legend-item"><div class="map-legend-dot" style="background:#fff"></div>Ship</div>
-      <span style="margin-left:auto;color:var(--accent);font-size:9px">DRAG TO MOVE · SCROLL TO ZOOM · CLICK PLANET TO WARP</span>
+      <span style="margin-left:auto;color:var(--accent);font-size:9px">DRAG TO MOVE · SCROLL TO ZOOM</span>
     </div>
   </div>
 
@@ -433,7 +433,7 @@
             <li>Full solar system layout — named star at centre, planets in orbital rings</li>
             <li>Planets orbit in real time; moons orbit planets</li>
             <li>Moons colonisable with 1 slot each; planet panel lists its moons</li>
-            <li>Floating draggable map (M) with scroll-to-zoom and click-to-warp</li>
+            <li>Floating draggable map (M) with scroll-to-zoom</li>
             <li>Off-screen arrows point to colonised planets &amp; moons</li>
           </ul>
         </div>
@@ -1215,38 +1215,7 @@ mapCanvas.addEventListener('wheel', e=>{
   mapScale = Math.max(0.02, Math.min(mapScale*factor, 2.0));
 },{passive:false});
 
-// Click to warp
-mapCanvas.addEventListener('click', e=>{
-  if(!state || mapDragging) return;
-  const rect = mapCanvas.getBoundingClientRect();
-  const mx = e.clientX-rect.left, my = e.clientY-rect.top;
-  const W2=mapCanvas.width, H2=mapCanvas.height;
-  const cx=W2/2, cy=H2/2;
-  // world pos of click
-  const wx = mapOffX + (mx-cx)/mapScale;
-  const wy = mapOffY + (my-cy)/mapScale;
-  for(const p of state.planets){
-    const pr=Math.max(8/mapScale, p.radius);
-    if(Math.hypot(wx-p.x, wy-p.y)<pr*2){
-      state.ship.x=p.x; state.ship.y=p.y-p.radius-40;
-      state.ship.vx=0; state.ship.vy=0;
-      toggleMap();
-      notify('Warped to '+p.name,'var(--accent)');
-      return;
-    }
-  }
-  for(const m of state.moons){
-    const mp=getMoonPos(m);
-    const mr=Math.max(6/mapScale, m.radius);
-    if(Math.hypot(wx-mp.x, wy-mp.y)<mr*2.5){
-      state.ship.x=mp.x; state.ship.y=mp.y-m.radius-30;
-      state.ship.vx=0; state.ship.vy=0;
-      toggleMap();
-      notify('Warped to '+m.name,'var(--green)');
-      return;
-    }
-  }
-});
+// Warp feature removed - players must fly to destinations
 
 function drawMap(){
   if(!state||!mapOpen) return;
@@ -1312,7 +1281,8 @@ function drawMap(){
     const pr=Math.max(4, p.radius*mapScale);
     if(p.colonized){
       const gl=mapCtx.createRadialGradient(px,py,pr,px,py,pr*3);
-      gl.addColorStop(0,'rgba(0,212,255,0.18)');gl.addColorStop(1,'transparent');
+      const glowColor = p.enemyOwned ? 'rgba(255,60,60,0.18)' : 'rgba(0,212,255,0.18)';
+      gl.addColorStop(0,glowColor);gl.addColorStop(1,'transparent');
       mapCtx.beginPath();mapCtx.arc(px,py,pr*3,0,Math.PI*2);mapCtx.fillStyle=gl;mapCtx.fill();
     }
     const grad=mapCtx.createRadialGradient(px-pr*0.3,py-pr*0.3,0,px,py,pr);
@@ -1320,10 +1290,11 @@ function drawMap(){
     mapCtx.beginPath();mapCtx.arc(px,py,pr,0,Math.PI*2);mapCtx.fillStyle=grad;mapCtx.fill();
     if(p.colonized){
       mapCtx.beginPath();mapCtx.arc(px,py,pr+3,0,Math.PI*2);
-      mapCtx.strokeStyle='rgba(0,212,255,0.9)';mapCtx.lineWidth=1.5;mapCtx.stroke();
+      const ringColor = p.enemyOwned ? 'rgba(255,60,60,0.9)' : 'rgba(0,212,255,0.9)';
+      mapCtx.strokeStyle=ringColor;mapCtx.lineWidth=1.5;mapCtx.stroke();
     }
     if(pr>3){
-      mapCtx.fillStyle=p.colonized?'rgba(0,212,255,0.95)':'rgba(140,184,212,0.65)';
+      mapCtx.fillStyle=p.colonized?(p.enemyOwned?'rgba(255,60,60,0.95)':'rgba(0,212,255,0.95)'):'rgba(140,184,212,0.65)';
       mapCtx.font=(p.colonized?'bold ':'')+Math.max(8,Math.min(11,pr*1.2))+'px "Share Tech Mono"';
       mapCtx.textAlign='center';
       mapCtx.fillText(p.name,px,py+pr+12);
@@ -1919,7 +1890,6 @@ function update(dt){
         s.vy-=1.35*dot*ny;
         // Notify at most once per second
         if(state.tick-lastImpact>30){
-          notify('💥 Hull impact!','var(--red)');
           lastImpact=state.tick;
         }
       }
