@@ -202,6 +202,7 @@
     </div>
     <div class="hud-panel" id="hud-top-right">
       <div class="stat-row"><div class="hud-label">💳 Credits</div><div class="hud-value" id="credits-val" style="color:var(--yellow)">200</div></div>
+      <div class="stat-row"><div class="hud-label">System</div><div class="hud-value" id="system-val">Sol Prime</div></div>
       <div class="stat-row"><div class="hud-label">Colonies</div><div class="hud-value" id="colony-count">0</div></div>
       <div class="stat-row"><div class="hud-label">Farms / Fuel Gens</div><div class="hud-value"><span id="farm-modules">0</span> / <span id="fuel-modules">0</span></div></div>
       <div class="stat-row">
@@ -270,6 +271,7 @@
       <button class="overlay-btn accent" onclick="togglePause()">▶ RESUME</button>
       <button class="overlay-btn" onclick="openMarket()">📈 FOOD MARKET</button>
       <button class="overlay-btn" onclick="openBonds()">📊 SOLAR BONDS</button>
+      <button class="overlay-btn" id="system-travel-btn" onclick="travelSolarSystem()">✦ TRAVEL SYSTEM</button>
       <button class="overlay-btn" onclick="openPatchNotes()">📋 PATCH NOTES</button>
       <button class="overlay-btn danger" onclick="confirmQuit()">↩ QUIT TO TITLE</button>
     </div>
@@ -333,6 +335,15 @@
     <div class="overlay-title">PATCH NOTES</div>
     <div class="overlay-box">
       <div class="patch-scroll">
+        <div class="patch-entry">
+          <div class="patch-version">v1.6 — Interstellar Expansion</div>
+          <ul class="patch-list">
+            <li>Added travel to a second solar system from the pause menu</li>
+            <li>Outbound travel costs 200¢ and 30 fuel</li>
+            <li>Colonies, modules, and reclaiming cost twice as much in the second system</li>
+            <li>Return travel to the first solar system is available from the pause menu</li>
+          </ul>
+        </div>
         <div class="patch-entry">
           <div class="patch-version">v1.5.2.1 — Laser Firing Bug Fix</div>
           <ul class="patch-list">
@@ -489,10 +500,11 @@
       <div>🗺 <span style="color:var(--accent)">MAP</span> — Solar system map</div>
     </div>
     <div style="margin-top:4px">
-      <div style="color:#39ff14;font-size:10px">▸ Farm modules generate Food (80¢ · 6s build)</div>
-      <div style="color:#ff6b35;font-size:10px">▸ Fuel Gens refuel ship (120¢ · 8s build)</div>
+      <div style="color:#39ff14;font-size:10px">▸ Farm modules generate Food (30¢ · 6s build)</div>
+      <div style="color:#ff6b35;font-size:10px">▸ Fuel Gens refuel ship (70¢ · 8s build)</div>
       <div style="color:#ffd700;font-size:10px">▸ Sell food for credits via the HUD slider</div>
-      <div style="color:#8ab8d4;font-size:10px">▸ Colonizing costs 50¢ · Moons have 1 slot</div>
+      <div style="color:#8ab8d4;font-size:10px">▸ Colonizing costs 20¢ · Moons have 1 slot</div>
+      <div style="color:#00d4ff;font-size:10px">▸ Travel to another system costs 200¢ + 30 fuel</div>
     </div>
     <div style="display:flex;gap:10px;margin-top:4px;">
       <button class="btn-start" id="btn-start" style="flex:1">LAUNCH MISSION</button>
@@ -533,6 +545,8 @@ const ENEMY_SPAWN_INTERVAL = 45000; // ms between new enemy spawns
 const ENEMY_SPEED       = 0.10;   // thrust
 const ENEMY_AGGRO_RANGE = 500;    // px — distance at which enemy targets player
 const RECLAIM_COST      = 80;     // credits to reclaim a taken-over planet
+const SYSTEM_TRAVEL_COST = 200;   // credits to reach the frontier system
+const SYSTEM_TRAVEL_FUEL = 30;    // fuel spent on interstellar transit
 
 // ===== SOLAR SYSTEM GENERATION =====
 const STAR_CONFIGS=[
@@ -561,12 +575,14 @@ function makeClouds(radius,isMoon){
   }));
 }
 
-function generateSolarSystem(){
+function generateSolarSystem(options={}){
   const star=pick(STAR_CONFIGS);
   const planets=[], moons=[];
   const usedPN=new Set(), usedMN=new Set();
+  const homeName=options.homeName||'Homeworld';
+  const homeColonized=options.homeColonized!==false;
 
-  const orbitRadii=[260,390,540,710,900,1110,1340,1590];
+  const orbitRadii=[360,580,840,1140,1480,1860,2280,2740];
 
   // Homeworld on 2nd orbit, starts at top
   const homeAngle=-Math.PI/2;
@@ -576,11 +592,12 @@ function generateSolarSystem(){
     orbitRadius:orbitRadii[1],orbitAngle:homeAngle,orbitSpeed:0.00008,
     radius:homeR,name:'Homeworld',colors:['#4a8a5a','#2a4a2a'],
     x:Math.cos(homeAngle)*orbitRadii[1],y:Math.sin(homeAngle)*orbitRadii[1],
-    colonized:true,slots:Array(slotsForRadius(homeR)).fill(null),
+    colonized:homeColonized,slots:Array(slotsForRadius(homeR)).fill(null),
     rings:false,ringAngle:0.5,isMoon:false,
     clouds:makeClouds(homeR,false),
   };
-  usedPN.add('Homeworld');
+  home.name=homeName;
+  usedPN.add(homeName);
   planets.push(home);
 
   for(let i=0;i<orbitRadii.length;i++){
@@ -605,7 +622,7 @@ function generateSolarSystem(){
 
   // Moons for planets large enough
   for(const p of planets){
-    if(p.name==='Homeworld')continue;
+    if(p.name===homeName)continue;
     if(p.radius<26)continue;
     const moonCount=p.radius>48?Math.floor(rnd(2,4)):p.radius>36?Math.floor(rnd(1,3)):1;
     let moonOrbitBase=p.radius+60;  // start moons further from planet surface
@@ -635,6 +652,14 @@ let state=null;
 
 function defaultState(){
   const sys=generateSolarSystem();
+  const currentSystemIndex=0;
+  const systems=[{
+    name:'Origin System',
+    costMultiplier:1,
+    star:sys.star,
+    planets:sys.planets,
+    moons:sys.moons,
+  }];
   const homeOrbitR=390, homeAngle=-Math.PI/2;
   return {
     ship:{x:Math.cos(homeAngle)*homeOrbitR,y:Math.sin(homeAngle)*homeOrbitR-80,vx:0,vy:0,angle:0},
@@ -652,6 +677,7 @@ function defaultState(){
     bondHistory:[10.0],       // last N bond prices
     bondTimer:0,              // ms until next bond price change
     bondsOwned:0,             // number of bonds held
+    currentSystemIndex,systems,
     star:sys.star,planets:sys.planets,moons:sys.moons,
     camera:{x:Math.cos(homeAngle)*homeOrbitR,y:Math.sin(homeAngle)*homeOrbitR-80},
     tick:0,
@@ -659,10 +685,122 @@ function defaultState(){
 }
 
 function loadState(){
-  try{const raw=localStorage.getItem(SAVE_KEY);if(raw){const s=JSON.parse(raw);if(s&&s.ship&&s.planets)return s;}}catch(e){}
+  try{const raw=localStorage.getItem(SAVE_KEY);if(raw){const s=JSON.parse(raw);if(s&&s.ship&&s.planets)return normalizeState(s);}}catch(e){}
   return null;
 }
-function saveState(){try{localStorage.setItem(SAVE_KEY,JSON.stringify(state));}catch(e){}}
+function saveState(){try{syncActiveSystem();localStorage.setItem(SAVE_KEY,JSON.stringify(state));}catch(e){}}
+
+function normalizeState(s){
+  if(!s.systems||!Array.isArray(s.systems)||!s.systems.length){
+    s.currentSystemIndex=0;
+    s.systems=[{
+      name:'Origin System',
+      costMultiplier:1,
+      star:s.star,
+      planets:s.planets,
+      moons:s.moons,
+    }];
+  }
+  s.currentSystemIndex=s.currentSystemIndex||0;
+  const cur=s.systems[s.currentSystemIndex]||s.systems[0];
+  cur.star=s.star||cur.star;
+  cur.planets=s.planets||cur.planets;
+  cur.moons=s.moons||cur.moons;
+  s.star=cur.star;
+  s.planets=cur.planets;
+  s.moons=cur.moons;
+  return s;
+}
+
+function syncActiveSystem(){
+  if(!state)return;
+  const idx=state.currentSystemIndex||0;
+  if(!state.systems)state.systems=[];
+  if(state.systems[idx]){
+    state.systems[idx].star=state.star;
+    state.systems[idx].planets=state.planets;
+    state.systems[idx].moons=state.moons;
+  }
+}
+
+function ensureFrontierSystem(){
+  if(!state)return;
+  if(state.systems&&state.systems[1])return;
+  const originStar=state.systems&&state.systems[0]&&state.systems[0].star&&state.systems[0].star.name;
+  let sys=generateSolarSystem({homeName:'Frontier Gate',homeColonized:false});
+  for(let i=0;i<6&&sys.star.name===originStar;i++){
+    sys=generateSolarSystem({homeName:'Frontier Gate',homeColonized:false});
+  }
+  if(sys.star.name===originStar){
+    sys.star=STAR_CONFIGS.find(star=>star.name!==originStar)||sys.star;
+  }
+  state.systems=state.systems||[];
+  state.systems[1]={
+    name:'Frontier System',
+    costMultiplier:2,
+    star:sys.star,
+    planets:sys.planets,
+    moons:sys.moons,
+  };
+}
+
+function currentSystem(){
+  if(!state)return null;
+  return state.systems&&state.systems[state.currentSystemIndex||0]||null;
+}
+
+function systemCost(base){
+  const sys=currentSystem();
+  return Math.ceil(base*(sys&&sys.costMultiplier||1));
+}
+
+function enterSystem(idx,arrivalLabel){
+  syncActiveSystem();
+  const sys=state.systems[idx];
+  state.currentSystemIndex=idx;
+  state.star=sys.star;
+  state.planets=sys.planets;
+  state.moons=sys.moons;
+  const anchor=state.planets.find(p=>p.name==='Homeworld'||p.name==='Frontier Gate')||state.planets[0];
+  const ax=anchor?anchor.x:390;
+  const ay=anchor?anchor.y:-390;
+  state.ship.x=ax;
+  state.ship.y=ay-(anchor?anchor.radius:36)-90;
+  state.ship.vx=0;
+  state.ship.vy=0;
+  state.camera.x=state.ship.x;
+  state.camera.y=state.ship.y;
+  state.enemies=[];
+  state.playerLasers=[];
+  state.enemyLasers=[];
+  closePanel();
+  if(mapOpen)toggleMap();
+  notify(arrivalLabel||`Arrived in ${sys.name}`,'var(--accent)');
+  updateHUD();
+  saveState();
+}
+
+window.travelSolarSystem=function(){
+  if(!state)return;
+  const idx=state.currentSystemIndex||0;
+  if(idx===0){
+    if(state.credits<SYSTEM_TRAVEL_COST){
+      notify(`Need ${SYSTEM_TRAVEL_COST}¢ to reach the frontier — only ${Math.floor(state.credits)}¢ available`,'var(--red)');
+      return;
+    }
+    if(state.fuel<SYSTEM_TRAVEL_FUEL){
+      notify(`Need ${SYSTEM_TRAVEL_FUEL} fuel for interstellar travel — only ${Math.ceil(state.fuel)} available`,'var(--red)');
+      return;
+    }
+    ensureFrontierSystem();
+    state.credits-=SYSTEM_TRAVEL_COST;
+    state.fuel-=SYSTEM_TRAVEL_FUEL;
+    enterSystem(1,`✦ Frontier system reached (-${SYSTEM_TRAVEL_COST}¢, -${SYSTEM_TRAVEL_FUEL} fuel)`);
+  } else {
+    enterSystem(0,'↩ Returned to the origin system');
+  }
+  if(gamePaused)togglePause();
+};
 
 // ===== CANVAS =====
 const bgCanvas=document.getElementById('bg-canvas');
@@ -933,6 +1071,7 @@ function openPlanetPanel(body,type){
   const enemyWarn = body.enemyOwned?'<br><span style="color:var(--red)">⚠ ENEMY CONTROLLED</span>':''
   panelInfo.innerHTML=`Status: ${ctext}${enemyWarn}<br>Type: ${type==='moon'?'Moon':'Planet'} (${sizeClass(body.radius)})${parentInfo}<br>Slots: ${body.slots.length}`;
   renderSlots(body);
+  btnColonize.textContent=`Colonize ${type==='moon'?'Moon':'Planet'} (${systemCost(COST_COLONIZE)}¢)`;
   btnColonize.style.display=body.colonized?'none':'block';
 
   // Show reclaim button for enemy-owned planets
@@ -945,7 +1084,7 @@ function openPlanetPanel(body,type){
     document.getElementById('planet-panel').insertBefore(reclaimBtn,
       document.getElementById('btn-colonize'));
   }
-  reclaimBtn.textContent=`⚔ Reclaim Planet (${RECLAIM_COST}¢)`;
+  reclaimBtn.textContent=`⚔ Reclaim Planet (${systemCost(RECLAIM_COST)}¢)`;
   reclaimBtn.style.display=body.enemyOwned?'block':'none';
   reclaimBtn.onclick=()=>reclaimPlanet(body.id);
 
@@ -1038,21 +1177,22 @@ function tickBuilding(dt){
 function showSlotMenu(body,idx){
   const div=panelSlots.children[idx];
   const cr=state?Math.floor(state.credits):0;
-  const canFarm=cr>=COST_FARM, canFuel=cr>=COST_FUEL;
+  const farmCost=systemCost(COST_FARM), fuelCost=systemCost(COST_FUEL);
+  const canFarm=cr>=farmCost, canFuel=cr>=fuelCost;
   div.innerHTML=`<div style="width:100%">
     <button onclick="assignSlot('farm',${idx})" ${canFarm?'':'disabled'}
       style="width:100%;margin-bottom:4px;padding:5px 8px;background:rgba(57,255,20,${canFarm?'0.1':'0.03'});border:1px solid ${canFarm?'var(--green)':'#333'};color:${canFarm?'var(--green)':'#555'};font-size:10px;cursor:${canFarm?'pointer':'not-allowed'};font-family:inherit;text-align:left">
-      🌾 Farm <span style="opacity:0.6;font-size:9px">${COST_FARM}¢ · ${BUILD_TIME_FARM/1000}s · +food/s</span></button>
+      🌾 Farm <span style="opacity:0.6;font-size:9px">${farmCost}¢ · ${BUILD_TIME_FARM/1000}s · +food/s</span></button>
     <button onclick="assignSlot('fuel',${idx})" ${canFuel?'':'disabled'}
       style="width:100%;padding:5px 8px;background:rgba(255,107,53,${canFuel?'0.1':'0.03'});border:1px solid ${canFuel?'var(--fuel-color)':'#333'};color:${canFuel?'var(--fuel-color)':'#555'};font-size:10px;cursor:${canFuel?'pointer':'not-allowed'};font-family:inherit;text-align:left">
-      ⚡ Fuel Gen <span style="opacity:0.6;font-size:9px">${COST_FUEL}¢ · ${BUILD_TIME_FUEL/1000}s · costs food</span></button>
+      ⚡ Fuel Gen <span style="opacity:0.6;font-size:9px">${fuelCost}¢ · ${BUILD_TIME_FUEL/1000}s · costs food</span></button>
     <div style="font-size:9px;color:var(--yellow);margin-top:5px;text-align:right">Your credits: ${cr}¢</div>
   </div>`;
 }
 
 window.assignSlot=function(type,idx){
   if(!activePlanet||!state)return;
-  const cost=type==='farm'?COST_FARM:COST_FUEL;
+  const cost=type==='farm'?systemCost(COST_FARM):systemCost(COST_FUEL);
   if(state.credits<cost){notify(`Need ${cost}¢ — only ${Math.floor(state.credits)}¢ available`,'var(--red)');return;}
   state.credits-=cost;
   const bt=type==='farm'?BUILD_TIME_FARM:BUILD_TIME_FUEL;
@@ -1064,12 +1204,13 @@ window.assignSlot=function(type,idx){
 
 btnColonize.addEventListener('click',()=>{
   if(!activePlanet||!state)return;
-  if(state.credits<COST_COLONIZE){notify(`Need ${COST_COLONIZE}¢ to colonize — only ${Math.floor(state.credits)}¢ available`,'var(--red)');return;}
-  state.credits-=COST_COLONIZE;
+  const cost=systemCost(COST_COLONIZE);
+  if(state.credits<cost){notify(`Need ${cost}¢ to colonize — only ${Math.floor(state.credits)}¢ available`,'var(--red)');return;}
+  state.credits-=cost;
   activePlanet.colonized=true;
   btnColonize.style.display='none';
   renderSlots(activePlanet);updateHUD();
-  notify(`🚀 ${activePlanet.name} colonized! (-${COST_COLONIZE}¢)`,'var(--accent)');
+  notify(`🚀 ${activePlanet.name} colonized! (-${cost}¢)`,'var(--accent)');
   saveState();
 });
 
@@ -1116,6 +1257,16 @@ function updateHUD(){
   document.getElementById('fuel-modules').textContent=gms;
   document.getElementById('farm-modules').textContent=fms;
   document.getElementById('credits-val').textContent=Math.floor(state.credits)+'¢';
+  const sys=currentSystem();
+  const systemVal=document.getElementById('system-val');
+  if(systemVal)systemVal.textContent=sys?sys.name:'Origin System';
+  const travelBtn=document.getElementById('system-travel-btn');
+  if(travelBtn){
+    const idx=state.currentSystemIndex||0;
+    travelBtn.textContent=idx===0
+      ? `✦ TRAVEL TO FRONTIER (${SYSTEM_TRAVEL_COST}¢ + ${SYSTEM_TRAVEL_FUEL} FUEL)`
+      : '↩ RETURN TO ORIGIN SYSTEM';
+  }
   const pl=document.getElementById('price-lbl');
   if(pl) pl.textContent=(state.foodPrice||2).toFixed(2);
   // keep market UI live if open
@@ -1747,17 +1898,19 @@ function updateEnemies(dt, now){
 // Reclaim a planet taken by enemies
 window.reclaimPlanet = function(planetId){
   if(!state) return;
-  if(state.credits < RECLAIM_COST){
-    notify(`Need ${RECLAIM_COST}¢ to reclaim — only ${Math.floor(state.credits)}¢ available`,'var(--red)');
+  const cost=systemCost(RECLAIM_COST);
+  if(state.credits < cost){
+    notify(`Need ${cost}¢ to reclaim — only ${Math.floor(state.credits)}¢ available`,'var(--red)');
     return;
   }
   const p = [...state.planets,...state.moons].find(b=>b.id===planetId);
   if(!p||!p.enemyOwned){ notify('Planet is not enemy-controlled.','var(--text)'); return; }
-  state.credits -= RECLAIM_COST;
+  state.credits -= cost;
   p.enemyOwned = false;
   p.slots = p.slots.map(()=>null); // clear enemy modules
-  notify(`✅ ${p.name} reclaimed! (-${RECLAIM_COST}¢)`, 'var(--accent)');
-  spawnRetaliator(); // enemy sends a ship to take it back  updateHUD();
+  notify(`✅ ${p.name} reclaimed! (-${cost}¢)`, 'var(--accent)');
+  spawnRetaliator(); // enemy sends a ship to take it back
+  updateHUD();
   saveState();
   if(activePlanet===p) openPlanetPanel(p, p.isMoon?'moon':'planet');
 };
