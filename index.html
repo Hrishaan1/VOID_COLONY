@@ -49,6 +49,29 @@
     font-size:9px;align-items:center;background:rgba(4,10,18,0.98);}
   .map-legend-item{display:flex;align-items:center;gap:4px;color:var(--text);}
   .map-legend-dot{width:7px;height:7px;border-radius:50%;}
+  /* GALAXY MAP */
+  #galaxy-overlay{position:absolute;z-index:95;display:none;flex-direction:column;pointer-events:all;
+    width:min(820px,84vw);height:min(560px,78vh);min-width:360px;min-height:360px;
+    background:rgba(3,8,16,0.97);border:1px solid var(--accent);
+    box-shadow:0 0 42px rgba(0,212,255,0.2);overflow:hidden;}
+  #galaxy-header{flex:0 0 38px;display:flex;align-items:center;justify-content:space-between;
+    padding:0 14px;border-bottom:1px solid var(--border);cursor:grab;user-select:none;background:rgba(4,10,18,0.98);}
+  #galaxy-header:active{cursor:grabbing;}
+  #galaxy-header h2{font-family:'Orbitron',monospace;font-size:11px;color:var(--accent);letter-spacing:3px;}
+  #galaxy-close-btn{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--text);background:none;border:1px solid var(--border);padding:3px 10px;cursor:pointer;letter-spacing:1px;}
+  #galaxy-close-btn:hover{color:var(--red);border-color:var(--red);}
+  #galaxy-body{flex:1 1 auto;display:grid;grid-template-columns:1fr 250px;min-height:0;}
+  #galaxy-canvas-wrap{position:relative;min-height:0;background:#020408;}
+  #galaxy-canvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair;}
+  #galaxy-info{border-left:1px solid var(--border);padding:12px;background:rgba(7,13,20,0.9);overflow:auto;}
+  #galaxy-info h3{font-family:'Orbitron',monospace;font-size:12px;color:var(--text-bright);letter-spacing:2px;margin-bottom:8px;}
+  .galaxy-stat{display:flex;justify-content:space-between;gap:10px;font-size:10px;padding:5px 0;border-bottom:1px solid rgba(26,58,92,0.35);}
+  .galaxy-stat span:last-child{color:var(--text-bright);text-align:right;}
+  .galaxy-jump-btn{width:100%;margin-top:12px;padding:9px 8px;background:rgba(0,212,255,0.1);border:1px solid var(--accent);color:var(--accent);font-family:'Orbitron',monospace;font-size:10px;letter-spacing:2px;cursor:pointer;text-transform:uppercase;}
+  .galaxy-jump-btn:hover{background:var(--accent);color:var(--bg);}
+  .galaxy-jump-btn:disabled{opacity:0.35;cursor:not-allowed;background:none;color:var(--text);border-color:var(--border);}
+  #galaxy-footer{flex:0 0 28px;display:flex;gap:14px;padding:0 14px;border-top:1px solid var(--border);
+    font-size:9px;align-items:center;background:rgba(4,10,18,0.98);}
   /* Planet panel */
   #planet-panel{position:absolute;right:12px;top:50%;transform:translateY(-50%);width:248px;background:rgba(7,13,20,0.97);border:1px solid var(--accent);padding:14px;z-index:20;display:none;pointer-events:all;box-shadow:0 0 24px rgba(0,212,255,0.15);max-height:88vh;overflow-y:auto;}
   #planet-panel h2{font-family:'Orbitron',monospace;font-size:12px;color:var(--accent);letter-spacing:3px;margin-bottom:10px;text-transform:uppercase;}
@@ -171,6 +194,10 @@
     #planet-panel{right:0;left:0;top:auto;bottom:0;transform:none;width:100%;max-height:55vh;border-left:none;border-right:none;border-bottom:none;border-radius:0;}
     #map-overlay{left:0!important;top:0!important;width:100vw!important;height:100vh!important;min-width:unset!important;min-height:unset!important;}
     #map-footer span{display:none;}
+    #galaxy-overlay{left:0!important;top:0!important;width:100vw!important;height:100vh!important;min-width:unset!important;min-height:unset!important;}
+    #galaxy-body{grid-template-columns:1fr;grid-template-rows:1fr 180px;}
+    #galaxy-info{border-left:none;border-top:1px solid var(--border);}
+    #galaxy-footer span{display:none;}
     .controls-box{min-width:unset;width:90vw;padding:12px 16px;}
     #title-screen h1{letter-spacing:4px;}
     #notif{font-size:10px;padding:6px 14px;white-space:normal;text-align:center;max-width:80vw;}
@@ -236,6 +263,28 @@
     </div>
   </div>
 
+  <div id="galaxy-overlay">
+    <div id="galaxy-header">
+      <h2>GALAXY STARMAP</h2>
+      <button id="galaxy-close-btn" onclick="closeGalaxyMap()">[ ESC ] CLOSE</button>
+    </div>
+    <div id="galaxy-body">
+      <div id="galaxy-canvas-wrap"><canvas id="galaxy-canvas"></canvas></div>
+      <div id="galaxy-info">
+        <h3 id="galaxy-selected-name">Select a star</h3>
+        <div id="galaxy-selected-stats"></div>
+        <button class="galaxy-jump-btn" id="galaxy-jump-btn" onclick="jumpToSelectedSystem()" disabled>JUMP</button>
+      </div>
+    </div>
+    <div id="galaxy-footer">
+      <div class="map-legend-item"><div class="map-legend-dot" style="background:#00d4ff"></div>Current</div>
+      <div class="map-legend-item"><div class="map-legend-dot" style="background:#39ff14"></div>Visited</div>
+      <div class="map-legend-item"><div class="map-legend-dot" style="background:#ffd700"></div>Colonies</div>
+      <div class="map-legend-item"><div class="map-legend-dot" style="background:#8ab8d4"></div>Unvisited</div>
+      <span style="margin-left:auto;color:var(--accent);font-size:9px">DRAG MAP TO PAN · CLICK A STAR TO SELECT</span>
+    </div>
+  </div>
+
   <!-- TOUCH CONTROLS -->
   <div id="touch-controls">
     <div id="joystick-zone">
@@ -271,7 +320,7 @@
       <button class="overlay-btn accent" onclick="togglePause()">▶ RESUME</button>
       <button class="overlay-btn" onclick="openMarket()">📈 FOOD MARKET</button>
       <button class="overlay-btn" onclick="openBonds()">📊 SOLAR BONDS</button>
-      <button class="overlay-btn" id="system-travel-btn" onclick="travelSolarSystem()">✦ TRAVEL SYSTEM</button>
+      <button class="overlay-btn" id="system-travel-btn" onclick="openGalaxyMap()">✦ GALAXY STARMAP</button>
       <button class="overlay-btn" onclick="openPatchNotes()">📋 PATCH NOTES</button>
       <button class="overlay-btn danger" onclick="confirmQuit()">↩ QUIT TO TITLE</button>
     </div>
@@ -336,12 +385,12 @@
     <div class="overlay-box">
       <div class="patch-scroll">
         <div class="patch-entry">
-          <div class="patch-version">v1.6 — Interstellar Expansion</div>
+          <div class="patch-version">v1.6 — Galaxy Starmap</div>
           <ul class="patch-list">
-            <li>Added travel to a second solar system from the pause menu</li>
-            <li>Outbound travel costs 200¢ and 30 fuel</li>
-            <li>Colonies, modules, and reclaiming cost twice as much in the second system</li>
-            <li>Return travel to the first solar system is available from the pause menu</li>
+            <li>Added a draggable galaxy starmap with selectable nearby solar systems</li>
+            <li>Jump costs scale with each system's distance from the home system</li>
+            <li>Visited systems and systems with colonies are marked on the starmap</li>
+            <li>New nearby systems appear as you push deeper into the galaxy</li>
           </ul>
         </div>
         <div class="patch-entry">
@@ -504,7 +553,7 @@
       <div style="color:#ff6b35;font-size:10px">▸ Fuel Gens refuel ship (70¢ · 8s build)</div>
       <div style="color:#ffd700;font-size:10px">▸ Sell food for credits via the HUD slider</div>
       <div style="color:#8ab8d4;font-size:10px">▸ Colonizing costs 20¢ · Moons have 1 slot</div>
-      <div style="color:#00d4ff;font-size:10px">▸ Travel to another system costs 200¢ + 30 fuel</div>
+      <div style="color:#00d4ff;font-size:10px">▸ Galaxy jumps cost more the farther you go</div>
     </div>
     <div style="display:flex;gap:10px;margin-top:4px;">
       <button class="btn-start" id="btn-start" style="flex:1">LAUNCH MISSION</button>
@@ -545,22 +594,47 @@ const ENEMY_SPAWN_INTERVAL = 45000; // ms between new enemy spawns
 const ENEMY_SPEED       = 0.10;   // thrust
 const ENEMY_AGGRO_RANGE = 500;    // px — distance at which enemy targets player
 const RECLAIM_COST      = 80;     // credits to reclaim a taken-over planet
-const SYSTEM_TRAVEL_COST = 200;   // credits to reach the frontier system
-const SYSTEM_TRAVEL_FUEL = 30;    // fuel spent on interstellar transit
+
+// ==== GALAXY TRAVEL CONSTANTS ====
+const SYSTEM_TRAVEL_COST = 100;   // credits per home-distance unit
+const SYSTEM_TRAVEL_FUEL = 30;    // fuel per home-distance unit
+const GALAXY_DISTANCE_UNIT = 180;  // starmap pixels per cost tier
+const GALAXY_VISIBLE_SYSTEMS = 14;
 
 // ===== SOLAR SYSTEM GENERATION =====
 const STAR_CONFIGS=[
   {name:'Sol Prime',color:'#fff4c2',glow:'#ffcc00',corona:'#ff8800',radius:58},
   {name:'Veloris',color:'#c2e0ff',glow:'#4488ff',corona:'#0044cc',radius:50},
   {name:'Threnon',color:'#ffd0c2',glow:'#ff6644',corona:'#cc2200',radius:54},
+  {name:'Astra Vale',color:'#e8fff7',glow:'#44ffd0',corona:'#00a884',radius:47},
+  {name:'Kyr Solaris',color:'#fff0a8',glow:'#ffb347',corona:'#d86b00',radius:62},
+  {name:'Nymeris',color:'#d8c7ff',glow:'#8c5cff',corona:'#4b1dc9',radius:44},
+  {name:'Eldranis',color:'#ffe1f0',glow:'#ff6fae',corona:'#b41458',radius:52},
+  {name:'Vanta Helix',color:'#c8f2ff',glow:'#2ad7ff',corona:'#006c99',radius:49},
+  {name:'Orryx',color:'#ffd9aa',glow:'#ff8a2a',corona:'#a83f00',radius:56},
+  {name:'Lysithea',color:'#f4ffbd',glow:'#d7ff3f',corona:'#7ba300',radius:43},
+  {name:'Caelora',color:'#d4ecff',glow:'#66aaff',corona:'#1f4fb8',radius:51},
+  {name:'Mordane',color:'#ffc2b8',glow:'#ff4f3a',corona:'#8e160c',radius:59},
+  {name:'Ione Arc',color:'#f0dcff',glow:'#bb66ff',corona:'#6411a8',radius:46},
+  {name:'Sable Dawn',color:'#fff8dc',glow:'#ffe066',corona:'#bd8b00',radius:55},
+  {name:'Tarsis Blue',color:'#bfe8ff',glow:'#35b8ff',corona:'#005fad',radius:48},
+  {name:'Rhelion',color:'#ffe7c7',glow:'#ff9f45',corona:'#c85400',radius:53},
+  {name:'Mirrath',color:'#dffff1',glow:'#63ffc1',corona:'#00905f',radius:45},
+  {name:'Xyra Minor',color:'#ffd1dc',glow:'#ff6b88',corona:'#a91f3f',radius:41},
+  {name:'Hesper Coil',color:'#e5f0ff',glow:'#7aa7ff',corona:'#244fc0',radius:57},
+  {name:'Axiom Star',color:'#fff6c8',glow:'#ffd24d',corona:'#c47a00',radius:50},
+  {name:'Nacreon',color:'#ccfff7',glow:'#52ffe2',corona:'#008f9d',radius:44},
+  {name:'Vael Tauri',color:'#ffd6bd',glow:'#ff7c3d',corona:'#ab2d00',radius:60},
 ];
 const PLANET_NAMES=['Aurelion','Vexara','Noctis','Solenne','Kairos','Orbis','Zephyra','Celdrin','Marak','Fenova','Isaris','Duskholm','Vireon','Tarquin','Elyndra','Ashveil','Kroneth','Umbrax','Pyreth','Caldonis'];
 const MOON_NAMES=['Luna','Phobos','Deimos','Titan','Io','Europa','Ganymede','Callisto','Enceladus','Miranda','Oberon','Triton','Charon','Dysnomia','Nereid','Thalassa','Naiad','Larissa','Proteus','Himalia','Thebe','Amalthea'];
+const SYSTEM_NAMES=['Asterion','Nhalis Reach','Vespera','Caldris','Eon Veil','Mirefall','Oranth','Kestrel Verge','Luminara','Driftglass','Nox Harrow','Cygnus Fold','Auralis','Helion Gate','Vantor','Nyxbridge','Eldara','Rimewatch','Zereth','Cindral','Obsidian Wake','Tessara','Axiom Gulf','Far Meridian','Iris Deep','Kairoth'];
 const PLANET_PALETTES=[['#3a6ea5','#1a3a6a'],['#7a3a9a','#3a1a5a'],['#a05020','#5a2a10'],['#2a8a5a','#124a2a'],['#9a7020','#5a3a10'],['#5a7a4a','#2a4a1a'],['#8a3a4a','#4a1a2a'],['#2a6a8a','#0a3a4a'],['#6a5a8a','#2a1a4a'],['#4a6a3a','#1a3a0a'],['#8a6a2a','#4a3a0a'],['#3a4a8a','#1a1a5a']];
 const MOON_PALETTES=[['#7a7a8a','#3a3a4a'],['#9a8a7a','#4a3a2a'],['#6a8a9a','#2a4a5a'],['#8a7a6a','#4a3a2a'],['#7a8a7a','#3a4a3a'],['#9a9a7a','#4a4a2a']];
 
 function rnd(a,b){return a+Math.random()*(b-a);}
 function pick(arr){return arr[Math.floor(Math.random()*arr.length)];}
+function idstr(){return Math.random().toString(36).slice(2);}
 
 function slotsForRadius(r){
   if(r<16)return 1;if(r<25)return 1;if(r<35)return 2;if(r<45)return 3;if(r<52)return 4;return 5;
@@ -653,13 +727,25 @@ let state=null;
 function defaultState(){
   const sys=generateSolarSystem();
   const currentSystemIndex=0;
+  const galaxySystems=[{
+    id:'origin',
+    name:'Origin System',
+    x:0,y:0,
+    distance:0,
+    visited:true,
+    systemIndex:0,
+    starName:sys.star.name,
+    starColor:sys.star.color,
+  }];
   const systems=[{
     name:'Origin System',
     costMultiplier:1,
+    galaxyId:'origin',
     star:sys.star,
     planets:sys.planets,
     moons:sys.moons,
   }];
+  seedGalaxySystems(galaxySystems);
   const homeOrbitR=390, homeAngle=-Math.PI/2;
   return {
     ship:{x:Math.cos(homeAngle)*homeOrbitR,y:Math.sin(homeAngle)*homeOrbitR-80,vx:0,vy:0,angle:0},
@@ -677,7 +763,7 @@ function defaultState(){
     bondHistory:[10.0],       // last N bond prices
     bondTimer:0,              // ms until next bond price change
     bondsOwned:0,             // number of bonds held
-    currentSystemIndex,systems,
+    currentSystemIndex,systems,galaxySystems,selectedGalaxyId:null,
     star:sys.star,planets:sys.planets,moons:sys.moons,
     camera:{x:Math.cos(homeAngle)*homeOrbitR,y:Math.sin(homeAngle)*homeOrbitR-80},
     tick:0,
@@ -690,17 +776,110 @@ function loadState(){
 }
 function saveState(){try{syncActiveSystem();localStorage.setItem(SAVE_KEY,JSON.stringify(state));}catch(e){}}
 
+function galaxyDistance(x,y){return Math.max(0,Math.hypot(x,y)/GALAXY_DISTANCE_UNIT);}
+function galaxyCostFor(node){
+  const d=Math.max(0,node&&node.distance||0);
+  return {
+    credits:Math.ceil(SYSTEM_TRAVEL_COST*d),
+    fuel:Math.ceil(SYSTEM_TRAVEL_FUEL*d),
+    multiplier:Math.max(1,Math.round((1+d)*100)/100),
+  };
+}
+function galaxyColonyCount(node){
+  if(!node||node.systemIndex===undefined||!state||!state.systems[node.systemIndex])return 0;
+  const sys=state.systems[node.systemIndex];
+  return [...(sys.planets||[]),...(sys.moons||[])].filter(b=>b.colonized).length;
+}
+function nextGalaxyName(existing){
+  const used=new Set((existing||[]).map(n=>n.name));
+  let name;
+  do{name=pick(SYSTEM_NAMES);}while(used.has(name)&&used.size<SYSTEM_NAMES.length);
+  if(used.has(name))name=`${name} ${Math.floor(rnd(2,99))}`;
+  return name;
+}
+function makeGalaxyNode(existing,angle,dist){
+  const star=pick(STAR_CONFIGS);
+  const jitter=rnd(-34,34);
+  const x=Math.cos(angle)*(dist+jitter)+rnd(-18,18);
+  const y=Math.sin(angle)*(dist-jitter)+rnd(-18,18);
+  return {
+    id:idstr(),
+    name:nextGalaxyName(existing),
+    x,y,
+    distance:galaxyDistance(x,y),
+    visited:false,
+    systemIndex:null,
+    starName:star.name,
+    starColor:star.color,
+  };
+}
+function seedGalaxySystems(nodes){
+  while(nodes.length<GALAXY_VISIBLE_SYSTEMS){
+    const ring=Math.floor((nodes.length-1)/5)+1;
+    const slot=(nodes.length-1)%5;
+    const angle=slot*(Math.PI*2/5)+ring*0.48+rnd(-0.22,0.22);
+    const dist=GALAXY_DISTANCE_UNIT*(0.72+ring*0.34)+rnd(-20,40);
+    nodes.push(makeGalaxyNode(nodes,angle,dist));
+  }
+}
+function expandGalaxyNear(node){
+  if(!state||!node)return;
+  const before=state.galaxySystems.length;
+  const target=before+4;
+  while(state.galaxySystems.length<target){
+    const angle=Math.atan2(node.y,node.x)+rnd(-1.0,1.0);
+    const dist=Math.hypot(node.x,node.y)+rnd(GALAXY_DISTANCE_UNIT*0.6,GALAXY_DISTANCE_UNIT*1.25);
+    state.galaxySystems.push(makeGalaxyNode(state.galaxySystems,angle,dist));
+  }
+}
+
 function normalizeState(s){
   if(!s.systems||!Array.isArray(s.systems)||!s.systems.length){
     s.currentSystemIndex=0;
     s.systems=[{
       name:'Origin System',
       costMultiplier:1,
+      galaxyId:'origin',
       star:s.star,
       planets:s.planets,
       moons:s.moons,
     }];
   }
+  if(!s.galaxySystems||!Array.isArray(s.galaxySystems)||!s.galaxySystems.length){
+    s.galaxySystems=[{
+      id:'origin',
+      name:s.systems[0].name||'Origin System',
+      x:0,y:0,
+      distance:0,
+      visited:true,
+      systemIndex:0,
+      starName:s.systems[0].star&&s.systems[0].star.name||'Sol Prime',
+      starColor:s.systems[0].star&&s.systems[0].star.color||'#fff4c2',
+    }];
+    if(s.systems[1]){
+      const star=s.systems[1].star||pick(STAR_CONFIGS);
+      s.systems[1].galaxyId='frontier';
+      s.galaxySystems.push({
+        id:'frontier',
+        name:s.systems[1].name||'Frontier System',
+        x:GALAXY_DISTANCE_UNIT,y:0,
+        distance:1,
+        visited:true,
+        systemIndex:1,
+        starName:star.name,
+        starColor:star.color,
+      });
+    }
+  }
+  s.galaxySystems.forEach((node,i)=>{
+    if(!node.id)node.id=i===0?'origin':idstr();
+    if(node.distance===undefined)node.distance=galaxyDistance(node.x||0,node.y||0);
+    if(node.systemIndex!==null&&node.systemIndex!==undefined&&s.systems[node.systemIndex]){
+      node.visited=true;
+      s.systems[node.systemIndex].galaxyId=node.id;
+    }
+  });
+  seedGalaxySystems(s.galaxySystems);
   s.currentSystemIndex=s.currentSystemIndex||0;
   const cur=s.systems[s.currentSystemIndex]||s.systems[0];
   cur.star=s.star||cur.star;
@@ -723,27 +902,6 @@ function syncActiveSystem(){
   }
 }
 
-function ensureFrontierSystem(){
-  if(!state)return;
-  if(state.systems&&state.systems[1])return;
-  const originStar=state.systems&&state.systems[0]&&state.systems[0].star&&state.systems[0].star.name;
-  let sys=generateSolarSystem({homeName:'Frontier Gate',homeColonized:false});
-  for(let i=0;i<6&&sys.star.name===originStar;i++){
-    sys=generateSolarSystem({homeName:'Frontier Gate',homeColonized:false});
-  }
-  if(sys.star.name===originStar){
-    sys.star=STAR_CONFIGS.find(star=>star.name!==originStar)||sys.star;
-  }
-  state.systems=state.systems||[];
-  state.systems[1]={
-    name:'Frontier System',
-    costMultiplier:2,
-    star:sys.star,
-    planets:sys.planets,
-    moons:sys.moons,
-  };
-}
-
 function currentSystem(){
   if(!state)return null;
   return state.systems&&state.systems[state.currentSystemIndex||0]||null;
@@ -752,6 +910,37 @@ function currentSystem(){
 function systemCost(base){
   const sys=currentSystem();
   return Math.ceil(base*(sys&&sys.costMultiplier||1));
+}
+
+function currentGalaxyNode(){
+  if(!state)return null;
+  const sys=currentSystem();
+  return state.galaxySystems&&state.galaxySystems.find(n=>n.id===(sys&&sys.galaxyId));
+}
+
+function ensureSystemForNode(node){
+  if(!state||!node)return null;
+  if(node.systemIndex!==null&&node.systemIndex!==undefined&&state.systems[node.systemIndex]){
+    return node.systemIndex;
+  }
+  const homeName=node.distance<0.05?'Homeworld':`${node.name.split(' ')[0]} Gate`;
+  const sys=generateSolarSystem({homeName,homeColonized:false});
+  const costs=galaxyCostFor(node);
+  const idx=state.systems.length;
+  state.systems.push({
+    name:node.name,
+    costMultiplier:costs.multiplier,
+    galaxyId:node.id,
+    star:sys.star,
+    planets:sys.planets,
+    moons:sys.moons,
+  });
+  node.systemIndex=idx;
+  node.visited=true;
+  node.starName=sys.star.name;
+  node.starColor=sys.star.color;
+  expandGalaxyNear(node);
+  return idx;
 }
 
 function enterSystem(idx,arrivalLabel){
@@ -780,27 +969,6 @@ function enterSystem(idx,arrivalLabel){
   saveState();
 }
 
-window.travelSolarSystem=function(){
-  if(!state)return;
-  const idx=state.currentSystemIndex||0;
-  if(idx===0){
-    if(state.credits<SYSTEM_TRAVEL_COST){
-      notify(`Need ${SYSTEM_TRAVEL_COST}¢ to reach the frontier — only ${Math.floor(state.credits)}¢ available`,'var(--red)');
-      return;
-    }
-    if(state.fuel<SYSTEM_TRAVEL_FUEL){
-      notify(`Need ${SYSTEM_TRAVEL_FUEL} fuel for interstellar travel — only ${Math.ceil(state.fuel)} available`,'var(--red)');
-      return;
-    }
-    ensureFrontierSystem();
-    state.credits-=SYSTEM_TRAVEL_COST;
-    state.fuel-=SYSTEM_TRAVEL_FUEL;
-    enterSystem(1,`✦ Frontier system reached (-${SYSTEM_TRAVEL_COST}¢, -${SYSTEM_TRAVEL_FUEL} fuel)`);
-  } else {
-    enterSystem(0,'↩ Returned to the origin system');
-  }
-  if(gamePaused)togglePause();
-};
 
 // ===== CANVAS =====
 const bgCanvas=document.getElementById('bg-canvas');
@@ -1262,10 +1430,7 @@ function updateHUD(){
   if(systemVal)systemVal.textContent=sys?sys.name:'Origin System';
   const travelBtn=document.getElementById('system-travel-btn');
   if(travelBtn){
-    const idx=state.currentSystemIndex||0;
-    travelBtn.textContent=idx===0
-      ? `✦ TRAVEL TO FRONTIER (${SYSTEM_TRAVEL_COST}¢ + ${SYSTEM_TRAVEL_FUEL} FUEL)`
-      : '↩ RETURN TO ORIGIN SYSTEM';
+    travelBtn.textContent='✦ GALAXY STARMAP';
   }
   const pl=document.getElementById('price-lbl');
   if(pl) pl.textContent=(state.foodPrice||2).toFixed(2);
@@ -1492,6 +1657,215 @@ function drawMap(){
   mapCtx.font='9px "Share Tech Mono"';mapCtx.textAlign='left';
   mapCtx.fillText('YOU',sx+12,sy+4);
 }
+
+// ===== GALAXY STARMAP =====
+let galaxyOpen=false;
+let selectedGalaxyId=null;
+let galaxyOffX=0, galaxyOffY=0, galaxyScale=0.82;
+let galaxyDragging=false, galaxyDragStartX=0, galaxyDragStartY=0, galaxyDragOffX=0, galaxyDragOffY=0;
+let galaxyPointerMoved=false;
+const galaxyOverlay=document.getElementById('galaxy-overlay');
+const galaxyCanvas=document.getElementById('galaxy-canvas');
+const galaxyCtx=galaxyCanvas.getContext('2d');
+
+function positionGalaxyOverlay(){
+  const vw=window.innerWidth, vh=window.innerHeight;
+  const ow=galaxyOverlay.offsetWidth||Math.round(vw*0.84);
+  const oh=galaxyOverlay.offsetHeight||Math.round(vh*0.78);
+  galaxyOverlay.style.left=Math.round((vw-ow)/2)+'px';
+  galaxyOverlay.style.top=Math.round((vh-oh)/2)+'px';
+}
+
+window.openGalaxyMap=function(){
+  if(!state)return;
+  syncActiveSystem();
+  seedGalaxySystems(state.galaxySystems);
+  galaxyOpen=true;
+  galaxyOverlay.style.display='flex';
+  positionGalaxyOverlay();
+  selectedGalaxyId=(currentGalaxyNode()&&currentGalaxyNode().id)||'origin';
+  const node=state.galaxySystems.find(n=>n.id===selectedGalaxyId);
+  galaxyOffX=node?node.x:0;
+  galaxyOffY=node?node.y:0;
+  requestAnimationFrame(()=>{updateGalaxyInfo();drawGalaxyMap();});
+};
+
+window.closeGalaxyMap=function(){
+  galaxyOpen=false;
+  galaxyOverlay.style.display='none';
+};
+
+function galaxySelectedNode(){
+  return state&&state.galaxySystems&&state.galaxySystems.find(n=>n.id===selectedGalaxyId)||null;
+}
+
+function updateGalaxyInfo(){
+  const nameEl=document.getElementById('galaxy-selected-name');
+  const statsEl=document.getElementById('galaxy-selected-stats');
+  const jumpBtn=document.getElementById('galaxy-jump-btn');
+  const node=galaxySelectedNode();
+  if(!node){
+    nameEl.textContent='Select a star';
+    statsEl.innerHTML='';
+    jumpBtn.disabled=true;
+    jumpBtn.textContent='JUMP';
+    return;
+  }
+  const costs=galaxyCostFor(node);
+  const current=currentGalaxyNode();
+  const isCurrent=current&&current.id===node.id;
+  const colonies=galaxyColonyCount(node);
+  nameEl.textContent=node.name;
+  statsEl.innerHTML=`
+    <div class="galaxy-stat"><span>Status</span><span>${isCurrent?'Current system':node.visited?'Visited':'Unvisited'}</span></div>
+    <div class="galaxy-stat"><span>Star</span><span>${node.starName||'Unscanned'}</span></div>
+    <div class="galaxy-stat"><span>Distance</span><span>${(node.distance||0).toFixed(2)} sectors</span></div>
+    <div class="galaxy-stat"><span>Colonies</span><span>${colonies}</span></div>
+    <div class="galaxy-stat"><span>Local costs</span><span>${costs.multiplier.toFixed(2)}x</span></div>
+    <div class="galaxy-stat"><span>Jump cost</span><span>${costs.credits}¢ + ${costs.fuel} fuel</span></div>
+    <div class="galaxy-stat"><span>Your reserves</span><span>${Math.floor(state.credits)}¢ + ${Math.ceil(state.fuel)} fuel</span></div>`;
+  jumpBtn.disabled=isCurrent||state.credits<costs.credits||state.fuel<costs.fuel;
+  jumpBtn.textContent=isCurrent?'CURRENT SYSTEM':jumpBtn.disabled?'INSUFFICIENT RESERVES':'JUMP';
+}
+
+window.jumpToSelectedSystem=function(){
+  const node=galaxySelectedNode();
+  if(!node||!state)return;
+  const current=currentGalaxyNode();
+  if(current&&current.id===node.id)return;
+  const costs=galaxyCostFor(node);
+  if(state.credits<costs.credits){
+    notify(`Need ${costs.credits}¢ to jump — only ${Math.floor(state.credits)}¢ available`,'var(--red)');
+    return;
+  }
+  if(state.fuel<costs.fuel){
+    notify(`Need ${costs.fuel} fuel to jump — only ${Math.ceil(state.fuel)} available`,'var(--red)');
+    return;
+  }
+  state.credits-=costs.credits;
+  state.fuel-=costs.fuel;
+  const idx=ensureSystemForNode(node);
+  closeGalaxyMap();
+  if(gamePaused)togglePause();
+  enterSystem(idx,`✦ Arrived at ${node.name} (-${costs.credits}¢, -${costs.fuel} fuel)`);
+};
+
+function drawGalaxyMap(){
+  if(!state||!galaxyOpen)return;
+  const wrap=document.getElementById('galaxy-canvas-wrap');
+  const W2=galaxyCanvas.width=wrap.clientWidth||galaxyOverlay.clientWidth;
+  const H2=galaxyCanvas.height=wrap.clientHeight||galaxyOverlay.clientHeight-66;
+  if(W2<=0||H2<=0)return;
+  const cx=W2/2, cy=H2/2;
+  const sx=x=>cx+(x-galaxyOffX)*galaxyScale;
+  const sy=y=>cy+(y-galaxyOffY)*galaxyScale;
+  galaxyCtx.clearRect(0,0,W2,H2);
+  galaxyCtx.fillStyle='#020408';
+  galaxyCtx.fillRect(0,0,W2,H2);
+
+  for(let i=0;i<190;i++){
+    const px=(Math.sin(i*93.17)*0.5+0.5)*W2;
+    const py=(Math.cos(i*61.71)*0.5+0.5)*H2;
+    galaxyCtx.beginPath();galaxyCtx.arc(px,py,(i%5===0?1.1:0.6),0,Math.PI*2);
+    galaxyCtx.fillStyle=`rgba(200,232,255,${0.12+((i*11)%9)*0.035})`;galaxyCtx.fill();
+  }
+
+  const home=state.galaxySystems.find(n=>n.id==='origin')||state.galaxySystems[0];
+  if(home){
+    for(let r=GALAXY_DISTANCE_UNIT;r<=GALAXY_DISTANCE_UNIT*5;r+=GALAXY_DISTANCE_UNIT){
+      galaxyCtx.beginPath();galaxyCtx.arc(sx(home.x),sy(home.y),r*galaxyScale,0,Math.PI*2);
+      galaxyCtx.strokeStyle='rgba(26,58,92,0.24)';galaxyCtx.lineWidth=1;
+      galaxyCtx.setLineDash([3,12]);galaxyCtx.stroke();galaxyCtx.setLineDash([]);
+    }
+  }
+
+  const current=currentGalaxyNode();
+  for(const node of state.galaxySystems){
+    const x=sx(node.x), y=sy(node.y);
+    if(x<-80||x>W2+80||y<-80||y>H2+80)continue;
+    const selected=node.id===selectedGalaxyId;
+    const isCurrent=current&&current.id===node.id;
+    const colonies=galaxyColonyCount(node);
+    const r=isCurrent?8:colonies>0?7:node.visited?6:5;
+    const color=isCurrent?'#00d4ff':colonies>0?'#ffd700':node.visited?'#39ff14':(node.starColor||'#8ab8d4');
+    const glow=galaxyCtx.createRadialGradient(x,y,0,x,y,r*4);
+    glow.addColorStop(0,color+'88');glow.addColorStop(1,'transparent');
+    galaxyCtx.beginPath();galaxyCtx.arc(x,y,r*4,0,Math.PI*2);galaxyCtx.fillStyle=glow;galaxyCtx.fill();
+    galaxyCtx.beginPath();galaxyCtx.arc(x,y,r,0,Math.PI*2);galaxyCtx.fillStyle=color;galaxyCtx.fill();
+    galaxyCtx.strokeStyle=selected?'#ffffff':isCurrent?'#00d4ff':'rgba(200,232,255,0.35)';
+    galaxyCtx.lineWidth=selected?2:1;
+    galaxyCtx.beginPath();galaxyCtx.arc(x,y,r+5,0,Math.PI*2);galaxyCtx.stroke();
+    if(colonies>0){
+      galaxyCtx.fillStyle='#ffd700';
+      galaxyCtx.font='9px "Share Tech Mono"';
+      galaxyCtx.textAlign='center';
+      galaxyCtx.fillText(String(colonies),x,y-12);
+    }
+    galaxyCtx.fillStyle=selected?'rgba(255,255,255,0.95)':node.visited?'rgba(200,232,255,0.78)':'rgba(140,184,212,0.62)';
+    galaxyCtx.font=(selected?'bold ':'')+'10px "Share Tech Mono"';
+    galaxyCtx.textAlign='center';
+    galaxyCtx.fillText(node.name,x,y+r+16);
+  }
+}
+
+function selectGalaxyAt(clientX,clientY){
+  if(!state)return;
+  const rect=galaxyCanvas.getBoundingClientRect();
+  const mx=clientX-rect.left, my=clientY-rect.top;
+  const cx=galaxyCanvas.width/2, cy=galaxyCanvas.height/2;
+  let best=null,bestD=Infinity;
+  for(const node of state.galaxySystems){
+    const x=cx+(node.x-galaxyOffX)*galaxyScale;
+    const y=cy+(node.y-galaxyOffY)*galaxyScale;
+    const d=Math.hypot(mx-x,my-y);
+    if(d<bestD){bestD=d;best=node;}
+  }
+  if(best&&bestD<24){
+    selectedGalaxyId=best.id;
+    updateGalaxyInfo();
+    drawGalaxyMap();
+  }
+}
+
+galaxyCanvas.addEventListener('mousedown',e=>{
+  galaxyDragging=true;galaxyPointerMoved=false;
+  galaxyDragStartX=e.clientX;galaxyDragStartY=e.clientY;
+  galaxyDragOffX=galaxyOffX;galaxyDragOffY=galaxyOffY;
+  galaxyCanvas.style.cursor='grabbing';
+});
+window.addEventListener('mousemove',e=>{
+  if(!galaxyDragging)return;
+  const dx=e.clientX-galaxyDragStartX, dy=e.clientY-galaxyDragStartY;
+  if(Math.hypot(dx,dy)>4)galaxyPointerMoved=true;
+  galaxyOffX=galaxyDragOffX-dx/galaxyScale;
+  galaxyOffY=galaxyDragOffY-dy/galaxyScale;
+  drawGalaxyMap();
+});
+window.addEventListener('mouseup',e=>{
+  if(galaxyDragging&&!galaxyPointerMoved)selectGalaxyAt(e.clientX,e.clientY);
+  galaxyDragging=false;galaxyCanvas.style.cursor='crosshair';
+});
+galaxyCanvas.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const factor=e.deltaY<0?1.12:0.9;
+  galaxyScale=Math.max(0.35,Math.min(galaxyScale*factor,1.8));
+  drawGalaxyMap();
+},{passive:false});
+
+const galaxyHeader=document.getElementById('galaxy-header');
+let galaxyPanelDrag=false, galaxyPanelDX=0, galaxyPanelDY=0;
+galaxyHeader.addEventListener('mousedown',e=>{
+  if(e.target.tagName==='BUTTON')return;
+  galaxyPanelDrag=true;
+  galaxyPanelDX=e.clientX-galaxyOverlay.offsetLeft;
+  galaxyPanelDY=e.clientY-galaxyOverlay.offsetTop;
+});
+window.addEventListener('mousemove',e=>{
+  if(!galaxyPanelDrag)return;
+  galaxyOverlay.style.left=(e.clientX-galaxyPanelDX)+'px';
+  galaxyOverlay.style.top=(e.clientY-galaxyPanelDY)+'px';
+});
+window.addEventListener('mouseup',()=>{galaxyPanelDrag=false;});
 // ===== PAUSE / MARKET / PATCH NOTES =====
 let gamePaused = false;
 
@@ -1508,6 +1882,7 @@ window.confirmQuit = function(){
     gamePaused = false;
     gameRunning = false;
     gameOver = false;
+    closeGalaxyMap();
     document.getElementById('pause-screen').classList.remove('open');
     document.getElementById('title-screen').style.display = 'flex';
     document.getElementById('pause-btn').textContent = '⏸ PAUSE';
@@ -1667,6 +2042,7 @@ function bondMsg(msg, color='var(--yellow)'){
 window.addEventListener('keydown', e=>{
   if((e.key==='p'||e.key==='P') && gameRunning && !gameOver) togglePause();
   if(e.key==='Escape'){
+    if(galaxyOpen){ closeGalaxyMap(); return; }
     if(document.getElementById('bonds-screen').classList.contains('open')){ closeBonds(); return; }
     if(document.getElementById('market-screen').classList.contains('open')){ closeMarket(); return; }
     if(document.getElementById('patchnotes-screen').classList.contains('open')){ closePatchNotes(); return; }
@@ -2343,6 +2719,7 @@ function draw(){
 
   drawOffscreenIndicators(ctx,camX,camY);
   drawMap();
+  drawGalaxyMap();
 }
 
 function drawStar(ctx,star,tick){
