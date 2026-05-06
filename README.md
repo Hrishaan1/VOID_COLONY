@@ -3,7 +3,7 @@
 A high-fidelity, browser-based space exploration, economic, and combat simulation built with vanilla JavaScript and HTML5 Canvas.
 
 ## 🌌 Overview
-In **VOID COLONY**, you command a lone colony ship in a dynamic solar system. Balance the high-stakes economy of fuel and food while defending your territory from enemy raiders that actively seek to capture your planets and destroy your modules.
+In **VOID COLONY**, you command a lone colony ship in a "living" solar system. Balance the high-stakes economy of fuel and food while defending your territory from enemy raiders that actively seek to capture your planets and destroy your modules.
 
 ## ⚔️ Combat & Defense Features (New!)
 * **Laser Weaponry:** Engage enemies with high-velocity cyan laser bolts (SPACE or Mouse Click). Includes a 220ms cooldown system for balanced firing.
