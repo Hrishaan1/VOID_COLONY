@@ -456,6 +456,14 @@
     <div class="overlay-box">
       <div class="patch-scroll">
         <div class="patch-entry">
+          <div class="patch-version">v1.9 — Void Events</div>
+          <ul class="patch-list">
+            <li>Added random Solar Flares that temporarily disrupt the map or mouse aim</li>
+            <li>Added mineable passing comets with large credit rewards if you match velocity</li>
+            <li>Added rare paired wormholes that shortcut across distant solar orbits</li>
+          </ul>
+        </div>
+        <div class="patch-entry">
           <div class="patch-version">v1.8 — Space Station Weapons</div>
           <ul class="patch-list">
             <li>Added a neutral space station near the system center</li>
@@ -640,6 +648,7 @@
       <div style="color:#ff6b35;font-size:10px">▸ Fuel Gens refuel ship (70¢ · 8s build)</div>
       <div style="color:#00d4ff;font-size:10px">▸ Labs unlock permanent research upgrades (120¢ · 10s build)</div>
       <div style="color:#c8e8ff;font-size:10px">▸ Dock at the central station to buy alternate weapons</div>
+      <div style="color:#ffd700;font-size:10px">▸ Void Events can disrupt systems or reveal rare shortcuts</div>
       <div style="color:#ffd700;font-size:10px">▸ Sell food for credits via the HUD slider</div>
       <div style="color:#8ab8d4;font-size:10px">▸ Colonizing costs 20¢ · Moons have 1 slot</div>
       <div style="color:#00d4ff;font-size:10px">▸ Galaxy jumps cost more the farther you go</div>
@@ -685,6 +694,12 @@ const ENEMY_AGGRO_RANGE = 500;    // px — distance at which enemy targets play
 const RECLAIM_COST      = 80;     // credits to reclaim a taken-over planet
 const STATION_DOCK_RANGE = 110;
 const RAILGUN_FUEL_COST = 2.5;
+const VOID_EVENT_INTERVAL = 70000;
+const SOLAR_FLARE_DURATION = 18000;
+const COMET_DOCK_RANGE = 46;
+const COMET_MATCH_SPEED = 1.25;
+const WORMHOLE_DOCK_RANGE = 52;
+const WORMHOLE_DURATION = 90000;
 
 // ==== GALAXY TRAVEL CONSTANTS ====
 const SYSTEM_TRAVEL_COST = 100;   // credits per home-distance unit
@@ -874,6 +889,9 @@ function defaultState(){
     enemyLasers:[],
     lastPlayerShot:0,
     enemySpawnTimer:0,
+    voidEventTimer:25000,
+    activeVoidEvents:[],
+    wormholeCooldown:0,
     foodPrice:2.0,            // current market price (credits per food)
     priceHistory:[2.0],       // last N prices for chart
     priceTimer:0,             // ms until next price change
@@ -958,6 +976,9 @@ function normalizeState(s){
   if(!WEAPON_DEFS.some(w=>w.id===s.activeWeapon))s.activeWeapon='laser';
   if(s.playerShield===undefined)s.playerShield=0;
   if(s.lastShieldHit===undefined)s.lastShieldHit=0;
+  if(s.voidEventTimer===undefined)s.voidEventTimer=30000;
+  if(!Array.isArray(s.activeVoidEvents))s.activeVoidEvents=[];
+  if(s.wormholeCooldown===undefined)s.wormholeCooldown=0;
   if(!s.systems||!Array.isArray(s.systems)||!s.systems.length){
     s.currentSystemIndex=0;
     s.systems=[{
@@ -1040,6 +1061,14 @@ function countLabs(){
   return labs;
 }
 function getStationPos(){return {x:0,y:-(state&&state.star?state.star.radius:58)-120};}
+function solarFlareBlocks(kind){
+  return !!(state&&state.activeVoidEvents||[]).find(e=>e.type==='flare'&&e.blocks===kind);
+}
+function randomSystemPoint(minR=420,maxR=2500){
+  const a=Math.random()*Math.PI*2;
+  const r=rnd(minR,maxR);
+  return {x:Math.cos(a)*r,y:Math.sin(a)*r};
+}
 
 function syncActiveSystem(){
   if(!state)return;
@@ -1112,6 +1141,9 @@ function enterSystem(idx,arrivalLabel){
   state.enemies=[];
   state.playerLasers=[];
   state.enemyLasers=[];
+  state.activeVoidEvents=[];
+  state.voidEventTimer=20000;
+  state.wormholeCooldown=0;
   closePanel();
   if(mapOpen)toggleMap();
   notify(arrivalLabel||`Arrived in ${sys.name}`,'var(--accent)');
@@ -1171,6 +1203,10 @@ window.addEventListener('mousedown', e=>{
 });
 
 function toggleMouseAim(){
+  if(solarFlareBlocks('aim')){
+    notify('☀ Solar flare interference — mouse aim offline','var(--yellow)');
+    return;
+  }
   mouseAimMode = !mouseAimMode;
   document.getElementById('game-canvas').style.cursor = mouseAimMode ? 'crosshair' : 'default';
   notify(mouseAimMode ? '🖱 Mouse aim ON — click to fire' : '⌨ Keyboard control', mouseAimMode ? 'var(--accent)' : 'var(--text)');
@@ -1552,6 +1588,22 @@ window.addEventListener('keydown',e=>{
 function interactNearest(){
   if(!state)return;
   const s=state.ship;
+  for(const ev of (state.activeVoidEvents||[])){
+    if(ev.type!=='comet'||ev.mined)continue;
+    const dist=Math.hypot(ev.x-s.x,ev.y-s.y);
+    if(dist<COMET_DOCK_RANGE){
+      const relSpeed=Math.hypot((ev.vx||0)-s.vx,(ev.vy||0)-s.vy);
+      if(relSpeed<=COMET_MATCH_SPEED){
+        ev.mined=true;
+        state.credits+=ev.reward||260;
+        notify(`☄ Comet mined! +${ev.reward||260}¢`, 'var(--green)');
+        updateHUD();saveState();
+      } else {
+        notify(`☄ Match comet speed to mine (${relSpeed.toFixed(1)} rel speed)`, 'var(--yellow)');
+      }
+      return;
+    }
+  }
   const station=getStationPos();
   if(Math.hypot(station.x-s.x,station.y-s.y)<STATION_DOCK_RANGE){
     openStation();return;
@@ -1647,6 +1699,10 @@ function positionMapOverlay(){
 
 window.toggleMap = function(){
   if(!gameRunning) return;
+  if(solarFlareBlocks('map')){
+    notify('☀ Solar flare interference — map offline','var(--yellow)');
+    return;
+  }
   mapOpen = !mapOpen;
   mapOverlay.style.display = mapOpen ? 'flex' : 'none';
   if(mapOpen){
@@ -1765,6 +1821,24 @@ function drawMap(){
   mapCtx.beginPath();mapCtx.moveTo(stx-8,sty);mapCtx.lineTo(stx+8,sty);mapCtx.moveTo(stx,sty-8);mapCtx.lineTo(stx,sty+8);mapCtx.stroke();
   mapCtx.fillStyle='rgba(200,232,255,0.7)';mapCtx.font='8px "Share Tech Mono"';mapCtx.textAlign='center';
   mapCtx.fillText('STATION',stx,sty+18);
+
+  for(const ev of (state.activeVoidEvents||[])){
+    if(ev.type==='comet'&&!ev.mined){
+      const cx2=wx(ev.x), cy2=wy(ev.y);
+      mapCtx.beginPath();mapCtx.arc(cx2,cy2,5,0,Math.PI*2);
+      mapCtx.fillStyle='rgba(120,220,255,0.85)';mapCtx.fill();
+      mapCtx.beginPath();mapCtx.moveTo(cx2,cy2);mapCtx.lineTo(cx2-ev.vx*4,cy2-ev.vy*4);
+      mapCtx.strokeStyle='rgba(120,220,255,0.55)';mapCtx.lineWidth=2;mapCtx.stroke();
+    } else if(ev.type==='wormhole'){
+      const ax=wx(ev.a.x), ay=wy(ev.a.y), bx=wx(ev.b.x), by=wy(ev.b.y);
+      mapCtx.beginPath();mapCtx.moveTo(ax,ay);mapCtx.lineTo(bx,by);
+      mapCtx.strokeStyle='rgba(180,80,255,0.22)';mapCtx.setLineDash([4,8]);mapCtx.stroke();mapCtx.setLineDash([]);
+      for(const p of [{x:ax,y:ay},{x:bx,y:by}]){
+        mapCtx.beginPath();mapCtx.arc(p.x,p.y,7,0,Math.PI*2);
+        mapCtx.strokeStyle='rgba(190,120,255,0.9)';mapCtx.lineWidth=1.4;mapCtx.stroke();
+      }
+    }
+  }
 
   // Moon orbit rings
   for(const m of state.moons){
@@ -2687,6 +2761,106 @@ window.reclaimPlanet = function(planetId){
   if(activePlanet===p) openPlanetPanel(p, p.isMoon?'moon':'planet');
 };
 
+function spawnSolarFlare(){
+  const blocks=Math.random()<0.5?'map':'aim';
+  state.activeVoidEvents.push({type:'flare',blocks,time:SOLAR_FLARE_DURATION,total:SOLAR_FLARE_DURATION});
+  if(blocks==='map'&&mapOpen){
+    mapOpen=false;
+    mapOverlay.style.display='none';
+  }
+  if(blocks==='aim'&&mouseAimMode){
+    mouseAimMode=false;
+    document.getElementById('game-canvas').style.cursor='default';
+    const ind=document.getElementById('mouse-aim-indicator');
+    if(ind)ind.textContent='☀ AIM OFFLINE';
+  }
+  notify(`☀ Solar flare! ${blocks==='map'?'Map':'Mouse aim'} disrupted`, 'var(--yellow)');
+}
+
+function spawnComet(){
+  const start=randomSystemPoint(1800,3100);
+  const target=randomSystemPoint(260,900);
+  const a=Math.atan2(target.y-start.y,target.x-start.x);
+  const speed=rnd(4.2,5.8);
+  state.activeVoidEvents.push({
+    type:'comet',
+    x:start.x,y:start.y,
+    vx:Math.cos(a)*speed,vy:Math.sin(a)*speed,
+    life:36000,total:36000,
+    reward:Math.floor(rnd(220,420)),
+    mined:false,
+  });
+  notify('☄ Comet passing — match speed and dock to mine it!', 'var(--accent)');
+}
+
+function spawnWormhole(){
+  const a=randomSystemPoint(420,900);
+  let b=randomSystemPoint(1700,2850);
+  if(Math.hypot(a.x-b.x,a.y-b.y)<1000)b=randomSystemPoint(2100,3000);
+  state.activeVoidEvents.push({type:'wormhole',a,b,life:WORMHOLE_DURATION,total:WORMHOLE_DURATION});
+  notify('◎ Wormhole pair detected — fly into either aperture to jump', 'var(--accent)');
+}
+
+function spawnVoidEvent(){
+  if(!state)return;
+  const roll=Math.random();
+  if(roll<0.36)spawnSolarFlare();
+  else if(roll<0.70)spawnComet();
+  else spawnWormhole();
+}
+
+function updateVoidEvents(dt){
+  if(!state)return;
+  if(solarFlareBlocks('map')&&mapOpen){
+    mapOpen=false;
+    mapOverlay.style.display='none';
+  }
+  if(solarFlareBlocks('aim')&&mouseAimMode){
+    mouseAimMode=false;
+    document.getElementById('game-canvas').style.cursor='default';
+  }
+  state.voidEventTimer=(state.voidEventTimer||0)+dt;
+  const active=state.activeVoidEvents||[];
+  if(state.voidEventTimer>=VOID_EVENT_INTERVAL){
+    state.voidEventTimer=0;
+    if(active.length<3)spawnVoidEvent();
+  }
+  state.wormholeCooldown=Math.max(0,(state.wormholeCooldown||0)-dt);
+  for(const ev of active){
+    ev.life=(ev.life===undefined?ev.time:ev.life)-dt;
+    if(ev.time!==undefined)ev.time-=dt;
+    if(ev.type==='comet'&&!ev.mined){
+      ev.x+=ev.vx;ev.y+=ev.vy;
+    }
+    if(ev.type==='wormhole'&&state.wormholeCooldown<=0){
+      const s=state.ship;
+      const da=Math.hypot(s.x-ev.a.x,s.y-ev.a.y);
+      const db=Math.hypot(s.x-ev.b.x,s.y-ev.b.y);
+      if(da<WORMHOLE_DOCK_RANGE||db<WORMHOLE_DOCK_RANGE){
+        const from=da<db?ev.a:ev.b;
+        const to=da<db?ev.b:ev.a;
+        const angle=Math.atan2(s.y-from.y,s.x-from.x);
+        s.x=to.x+Math.cos(angle)*(WORMHOLE_DOCK_RANGE+18);
+        s.y=to.y+Math.sin(angle)*(WORMHOLE_DOCK_RANGE+18);
+        state.camera.x=s.x;state.camera.y=s.y;
+        state.wormholeCooldown=1800;
+        notify('◎ Wormhole transit complete', 'var(--accent)');
+      }
+    }
+  }
+  const before=active.length;
+  state.activeVoidEvents=active.filter(e=>{
+    if(e.type==='flare')return (e.time||0)>0;
+    if(e.type==='comet')return !e.mined&&(e.life||0)>0&&Math.hypot(e.x,e.y)<4200;
+    return (e.life||0)>0;
+  });
+  const ind=document.getElementById('mouse-aim-indicator');
+  if(ind){
+    if(solarFlareBlocks('aim'))ind.textContent='☀ AIM OFFLINE';
+    else if(before!==state.activeVoidEvents.length)ind.textContent=mouseAimMode?'🖱 MOUSE AIM':'';
+  }
+}
+
 // ===== GAME LOOP =====
 let lastTime=0, thrustParticles=[], exhaustTimer=0;
 
@@ -2711,6 +2885,7 @@ function update(dt){
 
   tickBuilding(dt);
   updateEnemies(dt, performance.now());
+  updateVoidEvents(dt);
 
   if(mouseAimMode){
     // Smoothly snap ship angle toward the mouse cursor in world-space
@@ -2959,6 +3134,7 @@ function draw(){
 
   drawStar(ctx,state.star,state.tick);
   drawSpaceStation(ctx,state.tick);
+  drawVoidEvents(ctx,state.tick);
 
   // Orbital guides
   for(const p of state.planets){
@@ -3007,6 +3183,20 @@ function draw(){
       ctx.fillStyle=`rgba(0,212,255,${alpha})`;
       ctx.font='10px "Share Tech Mono"';ctx.textAlign='center';
       ctx.fillText('[E] Space Station',station.x,station.y-42);
+    }
+  }
+  for(const ev of (state.activeVoidEvents||[])){
+    if(ev.type==='comet'&&!ev.mined){
+      const dist=Math.hypot(ev.x-state.ship.x,ev.y-state.ship.y);
+      if(dist<COMET_DOCK_RANGE*2.2){
+        const relSpeed=Math.hypot((ev.vx||0)-state.ship.vx,(ev.vy||0)-state.ship.vy);
+        ctx.beginPath();ctx.arc(ev.x,ev.y,COMET_DOCK_RANGE,0,Math.PI*2);
+        ctx.strokeStyle=relSpeed<=COMET_MATCH_SPEED?'rgba(57,255,20,0.45)':'rgba(255,215,0,0.35)';
+        ctx.lineWidth=1;ctx.setLineDash([3,7]);ctx.stroke();ctx.setLineDash([]);
+        ctx.fillStyle=relSpeed<=COMET_MATCH_SPEED?'rgba(57,255,20,0.9)':'rgba(255,215,0,0.9)';
+        ctx.font='10px "Share Tech Mono"';ctx.textAlign='center';
+        ctx.fillText(relSpeed<=COMET_MATCH_SPEED?'[E] Mine Comet':'Match Speed',ev.x,ev.y-28);
+      }
     }
   }
   for(const b of[...state.planets,...state.moons]){
@@ -3195,6 +3385,55 @@ function drawSpaceStation(ctx,tick){
   ctx.fillStyle='rgba(200,232,255,0.72)';ctx.font='9px "Share Tech Mono"';ctx.textAlign='center';
   ctx.fillText('STATION',0,42);
   ctx.restore();
+}
+
+function drawVoidEvents(ctx,tick){
+  for(const ev of (state.activeVoidEvents||[])){
+    if(ev.type==='flare'){
+      const alpha=Math.max(0.08,Math.min(0.22,(ev.time||0)/(ev.total||SOLAR_FLARE_DURATION)*0.22));
+      ctx.save();
+      ctx.globalCompositeOperation='screen';
+      ctx.beginPath();ctx.arc(0,0,(state.star.radius||58)*(2.25+0.12*Math.sin(tick*0.18)),0,Math.PI*2);
+      ctx.strokeStyle=`rgba(255,215,80,${alpha})`;ctx.lineWidth=10;ctx.stroke();
+      ctx.restore();
+    } else if(ev.type==='comet'&&!ev.mined){
+      const angle=Math.atan2(ev.vy,ev.vx);
+      ctx.save();ctx.translate(ev.x,ev.y);ctx.rotate(angle);
+      const tail=ctx.createLinearGradient(-70,0,8,0);
+      tail.addColorStop(0,'transparent');
+      tail.addColorStop(1,'rgba(120,220,255,0.65)');
+      ctx.beginPath();ctx.moveTo(-76,-12);ctx.lineTo(8,-5);ctx.lineTo(8,5);ctx.lineTo(-76,12);ctx.closePath();
+      ctx.fillStyle=tail;ctx.fill();
+      const g=ctx.createRadialGradient(0,0,0,0,0,15);
+      g.addColorStop(0,'#ffffff');g.addColorStop(0.45,'rgba(120,220,255,0.95)');g.addColorStop(1,'transparent');
+      ctx.beginPath();ctx.arc(0,0,15,0,Math.PI*2);ctx.fillStyle=g;ctx.fill();
+      ctx.beginPath();ctx.arc(0,0,6,0,Math.PI*2);ctx.fillStyle='#d8f6ff';ctx.fill();
+      ctx.restore();
+      ctx.fillStyle='rgba(120,220,255,0.75)';ctx.font='9px "Share Tech Mono"';ctx.textAlign='center';
+      ctx.fillText(`${ev.reward||260}¢`,ev.x,ev.y+28);
+    } else if(ev.type==='wormhole'){
+      drawWormholeMouth(ctx,ev.a,tick);
+      drawWormholeMouth(ctx,ev.b,tick+80);
+      ctx.beginPath();ctx.moveTo(ev.a.x,ev.a.y);ctx.lineTo(ev.b.x,ev.b.y);
+      ctx.strokeStyle='rgba(180,80,255,0.12)';ctx.lineWidth=1;ctx.setLineDash([5,12]);ctx.stroke();ctx.setLineDash([]);
+    }
+  }
+}
+
+function drawWormholeMouth(ctx,p,tick){
+  const spin=tick*0.04;
+  ctx.save();ctx.translate(p.x,p.y);ctx.rotate(spin);
+  for(let i=0;i<3;i++){
+    ctx.beginPath();ctx.ellipse(0,0,26+i*8,14+i*5,i*0.7,0,Math.PI*2);
+    ctx.strokeStyle=`rgba(${130+i*40},${80+i*30},255,${0.55-i*0.12})`;
+    ctx.lineWidth=2;ctx.stroke();
+  }
+  ctx.restore();
+  const dist=state?Math.hypot(state.ship.x-p.x,state.ship.y-p.y):9999;
+  if(dist<WORMHOLE_DOCK_RANGE*2){
+    ctx.fillStyle='rgba(210,170,255,0.9)';ctx.font='10px "Share Tech Mono"';ctx.textAlign='center';
+    ctx.fillText('WORMHOLE',p.x,p.y-42);
+  }
 }
 
 function drawPlanet(ctx,p,tick){
