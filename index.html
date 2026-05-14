@@ -228,6 +228,9 @@
   .trade-name{font-family:'Orbitron',monospace;font-size:10px;color:var(--text-bright);letter-spacing:1px;text-transform:uppercase;}
   .trade-tag{font-size:9px;color:var(--yellow);white-space:nowrap;}
   .trade-desc{font-size:9px;line-height:1.45;color:var(--text);}
+  .trade-route-select{width:100%;margin-top:8px;background:rgba(255,255,255,0.05);border:1px solid var(--border);
+    color:var(--text-bright);font-family:'Share Tech Mono',monospace;font-size:10px;padding:6px 8px;outline:none;text-transform:uppercase;}
+  .trade-route-select:focus{border-color:var(--accent);}
   .trade-actions{display:flex;gap:8px;margin-top:10px;}
   .trade-btn{flex:1;padding:7px 8px;background:rgba(0,212,255,0.1);border:1px solid var(--accent);color:var(--accent);font-family:'Share Tech Mono',monospace;font-size:10px;cursor:pointer;text-transform:uppercase;}
   .trade-btn:hover{background:var(--accent);color:var(--bg);}
@@ -491,7 +494,7 @@
     <div class="overlay-box">
       <div class="patch-scroll">
         <div class="patch-entry">
-          <div class="patch-version">v2.0 — Trade Routes &amp; Freighters</div>
+          <div class="patch-version">v1.10 — Trade Routes &amp; Freighters</div>
           <ul class="patch-list">
             <li>Added purchasable AI freighters after you establish multiple colonies</li>
             <li>Freighters haul food from farm colonies to the central hub for credits</li>
@@ -747,7 +750,7 @@ const WORMHOLE_DOCK_RANGE = 52;
 const WORMHOLE_DURATION = 90000;
 const FREIGHTER_COST = 180;
 const FREIGHTER_CAPACITY = 18;
-const FREIGHTER_SPEED = 0.055;
+const FREIGHTER_SPEED = 0.07;
 const FREIGHTER_HEALTH = 90;
 const TRADE_ROUTE_VALUE = 3.2;
 const TRADE_RAID_INTERVAL = 90000;
@@ -1044,6 +1047,7 @@ function normalizeState(s){
     if(f.maxHp===undefined)f.maxHp=FREIGHTER_HEALTH;
     if(f.cargo===undefined)f.cargo=0;
     if(!f.mode)f.mode='to_colony';
+    if(f.preferredTargetBodyId===undefined)f.preferredTargetBodyId=null;
   });
   if(!s.systems||!Array.isArray(s.systems)||!s.systems.length){
     s.currentSystemIndex=0;
@@ -1140,7 +1144,7 @@ function tradeEligibleColonies(){
 function freighterStatusLabel(f){
   if(f.underAttack)return 'ESCORT REQUESTED';
   if(f.mode==='to_hub')return `Hauling ${Math.ceil(f.cargo||0)} food`;
-  if(f.mode==='loading')return 'Loading food';
+  if(f.mode==='loading')return 'Loading from colony';
   return 'Outbound to colony';
 }
 function solarFlareBlocks(kind){
@@ -2413,6 +2417,7 @@ function updateTradeUI(){
   }
   freighters.forEach((f,i)=>{
     const target=bodyById(f.targetBodyId);
+    const assigned=bodyById(f.preferredTargetBodyId);
     const card=document.createElement('div');
     card.className='trade-card'+(f.underAttack?' alert':'');
     const hpPct=Math.max(0,Math.round((f.hp/(f.maxHp||FREIGHTER_HEALTH))*100));
@@ -2422,12 +2427,44 @@ function updateTradeUI(){
       </div>
       <div class="trade-desc">
         Route: ${target?target.name:'Seeking farm colony'} ↔ Central Hub<br>
+        Assigned: ${assigned&&eligible.includes(assigned)?assigned.name:'Auto'}<br>
         Status: <span style="color:${f.underAttack?'var(--red)':'var(--text-bright)'}">${freighterStatusLabel(f)}</span><br>
         Cargo: ${Math.ceil(f.cargo||0)} / ${FREIGHTER_CAPACITY} food · Earned: ${Math.floor(f.earned||0)}¢
       </div>`;
+    const select=document.createElement('select');
+    select.className='trade-route-select';
+    select.innerHTML='<option value="">AUTO ROUTE</option>';
+    eligible.forEach(b=>{
+      const opt=document.createElement('option');
+      opt.value=b.id;
+      opt.textContent=b.name;
+      opt.selected=f.preferredTargetBodyId===b.id;
+      select.appendChild(opt);
+    });
+    select.addEventListener('change',()=>assignFreighterRoute(f.id,select.value));
+    card.appendChild(select);
     grid.appendChild(card);
   });
 }
+
+window.assignFreighterRoute = function(freighterId,bodyId){
+  if(!state)return;
+  const f=(state.freighters||[]).find(fr=>fr.id===freighterId);
+  if(!f)return;
+  const target=bodyId?bodyById(bodyId):null;
+  if(target&&(!target.colonized||target.enemyOwned||!target.slots.some(sl=>sl==='farm'))){
+    tradeMsg('That route needs one of your farm colonies.', 'var(--red)');
+    updateTradeUI();
+    return;
+  }
+  f.preferredTargetBodyId=target?target.id:null;
+  if(f.mode!=='to_hub'){
+    f.targetBodyId=target?target.id:null;
+    f.mode='to_colony';
+  }
+  tradeMsg(target?`Freighter route set to ${target.name}.`:'Freighter route set to auto.', 'var(--green)');
+  updateTradeUI();saveState();
+};
 
 window.buyFreighter = function(){
   if(!state)return;
@@ -2444,7 +2481,7 @@ window.buyFreighter = function(){
     vx:0,vy:0,angle:-Math.PI/2,
     hp:FREIGHTER_HEALTH,maxHp:FREIGHTER_HEALTH,
     cargo:0,mode:'to_colony',targetBodyId:null,
-    earned:0,underAttack:false,raidCooldown:25000,
+    preferredTargetBodyId:null,earned:0,underAttack:false,raidCooldown:25000,
   });
   tradeMsg('Freighter purchased. Route AI online.','var(--green)');
   notify('▣ Freighter launched from Central Hub','var(--yellow)');
@@ -2981,9 +3018,33 @@ function updateEnemies(dt, now){
 function chooseFreighterTarget(f){
   const eligible=tradeEligibleColonies();
   if(!eligible.length)return null;
+  const preferred=bodyById(f.preferredTargetBodyId);
+  if(preferred&&eligible.includes(preferred))return preferred;
   const current=bodyById(f.targetBodyId);
   if(current&&eligible.includes(current))return current;
   return eligible[Math.floor(Math.random()*eligible.length)];
+}
+
+function freighterPickupPoint(target,f){
+  if(!target)return {x:0,y:0};
+  if(target.isMoon){
+    const parent=state.planets.find(p=>p.id===target.parentId);
+    if(parent){
+      const px=parent.x, py=parent.y;
+      const a=Math.atan2(f.y-py,f.x-px);
+      return {x:px+Math.cos(a)*target.orbitRadius,y:py+Math.sin(a)*target.orbitRadius};
+    }
+  }
+  const r=target.orbitRadius||Math.hypot(target.x||0,target.y||0);
+  if(r>0){
+    const a=Math.atan2(f.y,f.x);
+    return {x:Math.cos(a)*r,y:Math.sin(a)*r};
+  }
+  return bodyPos(target);
+}
+
+function freighterDockRange(target){
+  return Math.max(54,(target&&target.radius||24)+36);
 }
 
 function spawnTradeRaider(f){
@@ -3026,7 +3087,7 @@ function updateTradeRoutes(dt){
     const target=bodyById(f.targetBodyId)||chooseFreighterTarget(f);
     if(!target)continue;
     f.targetBodyId=target.id;
-    const dest=f.mode==='to_hub'?hub:bodyPos(target);
+    const dest=f.mode==='to_hub'?hub:freighterPickupPoint(target,f);
     const dx=dest.x-f.x, dy=dest.y-f.y;
     const dist=Math.hypot(dx,dy)||1;
     const want=Math.atan2(dy,dx);
@@ -3034,7 +3095,8 @@ function updateTradeRoutes(dt){
     while(da>Math.PI)da-=Math.PI*2;
     while(da<-Math.PI)da+=Math.PI*2;
     f.angle=(f.angle||0)+Math.sign(da)*Math.min(Math.abs(da),ROTATE_SPEED*0.75);
-    if(dist>44){
+    const dockRange=f.mode==='to_hub'?44:freighterDockRange(target);
+    if(dist>dockRange){
       f.vx+=Math.cos(f.angle)*FREIGHTER_SPEED;
       f.vy+=Math.sin(f.angle)*FREIGHTER_SPEED;
     } else if(f.mode==='to_hub'){
@@ -3050,14 +3112,8 @@ function updateTradeRoutes(dt){
       const next=chooseFreighterTarget(f);
       if(next)f.targetBodyId=next.id;
     } else {
-      const load=Math.min(FREIGHTER_CAPACITY, Math.max(0,state.food));
-      if(load>=3){
-        state.food-=load;
-        f.cargo=load;
-        f.mode='to_hub';
-      } else {
-        f.mode='to_colony';
-      }
+      f.cargo=FREIGHTER_CAPACITY;
+      f.mode='to_hub';
     }
     f.vx*=0.985;f.vy*=0.985;
     const sp=Math.hypot(f.vx,f.vy);
