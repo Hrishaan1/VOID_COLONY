@@ -244,6 +244,10 @@
   .dialogue-btn.danger:hover{border-color:var(--red);color:var(--red);}
   .dialogue-btn:disabled{opacity:0.32;cursor:not-allowed;color:var(--text);border-color:var(--border);}
   .dialogue-req{display:block;color:var(--yellow);font-size:9px;margin-top:3px;}
+  .save-code-box{width:100%;min-height:120px;resize:vertical;background:rgba(255,255,255,0.045);border:1px solid var(--border);color:var(--text-bright);font-family:'Share Tech Mono',monospace;font-size:10px;line-height:1.45;padding:9px;outline:none;}
+  .save-code-box:focus{border-color:var(--accent);}
+  .save-code-row{display:flex;gap:8px;margin-top:8px;}
+  .save-code-row .overlay-btn{padding:8px 10px;}
 
   /* Mobile HUD adjustments */  /* Mobile HUD adjustments */
   @media(max-width:600px){
@@ -405,9 +409,29 @@
       <button class="overlay-btn" onclick="openBonds()">📊 SOLAR BONDS</button>
       <button class="overlay-btn" onclick="openResearch()">🔬 LABORATORY</button>
       <button class="overlay-btn" id="system-travel-btn" onclick="openGalaxyMap()">✦ GALAXY STARMAP</button>
+      <button class="overlay-btn" onclick="openSaveCodes()">▤ SAVE CODES</button>
       <button class="overlay-btn" onclick="openPatchNotes()">📋 PATCH NOTES</button>
       <button class="overlay-btn danger" onclick="confirmQuit()">↩ QUIT TO TITLE</button>
     </div>
+  </div>
+
+  <!-- SAVE CODE TRANSFER -->
+  <div class="overlay-screen" id="savecode-screen">
+    <div class="overlay-title">SAVE CODES</div>
+    <div class="overlay-box" style="min-width:min(560px,92vw)">
+      <div style="font-size:10px;color:var(--text);line-height:1.6;margin-bottom:10px">
+        Export creates a portable text string containing the same progress data normally stored in this browser.
+        Paste a code from another device and import it to continue there.
+      </div>
+      <textarea class="save-code-box" id="save-code-text" spellcheck="false" placeholder="Exported save code appears here. Paste a save code here to import."></textarea>
+      <div class="save-code-row">
+        <button class="overlay-btn accent" onclick="exportSaveCode()">EXPORT</button>
+        <button class="overlay-btn" onclick="copySaveCode()">COPY</button>
+        <button class="overlay-btn" onclick="importSaveCode()">IMPORT</button>
+      </div>
+      <div id="save-code-msg" style="font-size:10px;text-align:center;margin-top:10px;min-height:14px;color:var(--yellow)"></div>
+    </div>
+    <button class="overlay-btn" style="max-width:200px" onclick="closeSaveCodes()">[ ESC ] CLOSE</button>
   </div>
 
   <!-- TRADE ROUTES SCREEN -->
@@ -758,6 +782,7 @@
     </div>
     <div style="display:flex;gap:10px;margin-top:4px;">
       <button class="btn-start" id="btn-start" style="flex:1">LAUNCH MISSION</button>
+      <button class="btn-start" id="btn-save-code-title" style="flex:0;padding:12px 18px;font-size:10px;letter-spacing:2px" onclick="openSaveCodes()">▤</button>
       <button class="btn-start" id="btn-patch-notes-title" style="flex:0;padding:12px 18px;font-size:10px;letter-spacing:2px" onclick="openPatchNotes()">📋</button>
     </div>
   </div>
@@ -1394,7 +1419,7 @@ window.addEventListener('mousemove', e=>{
 // Left-click fires in mouse mode
 window.addEventListener('mousedown', e=>{
   if(e.button===0 && mouseAimMode && gameRunning && !gameOver && !gamePaused
-     && !e.target.closest('#planet-panel,#map-overlay,#hud,#pause-screen,#market-screen,#bonds-screen,#research-screen,#station-screen,#mothership-screen,#rewind-screen,#patchnotes-screen')){
+     && !e.target.closest('#planet-panel,#map-overlay,#hud,#pause-screen,#market-screen,#bonds-screen,#research-screen,#station-screen,#mothership-screen,#rewind-screen,#savecode-screen,#patchnotes-screen')){
     fireLaser();
   }
 });
@@ -2429,6 +2454,98 @@ window.closePatchNotes = function(){
   document.getElementById('patchnotes-screen').classList.remove('open');
 };
 
+function saveCodeMsg(msg,color='var(--yellow)'){
+  const el=document.getElementById('save-code-msg');
+  el.textContent=msg;el.style.color=color;
+}
+
+function encodeSaveCode(json){
+  return 'VOIDCOLONY1:'+btoa(unescape(encodeURIComponent(json)));
+}
+
+function decodeSaveCode(code){
+  const text=(code||'').trim();
+  if(!text)throw new Error('empty');
+  const payload=text.startsWith('VOIDCOLONY1:')?text.slice('VOIDCOLONY1:'.length):text;
+  return decodeURIComponent(escape(atob(payload)));
+}
+
+function currentSaveJson(){
+  if(state){
+    syncActiveSystem();
+    return JSON.stringify(state);
+  }
+  return localStorage.getItem(SAVE_KEY)||'';
+}
+
+window.openSaveCodes = function(){
+  const screen=document.getElementById('savecode-screen');
+  const box=document.getElementById('save-code-text');
+  saveCodeMsg('');
+  const json=currentSaveJson();
+  box.value=json?encodeSaveCode(json):'';
+  screen.classList.add('open');
+  if(gameRunning&&!gameOver){
+    gamePaused=true;
+    document.getElementById('pause-btn').textContent='▶ RESUME';
+  }
+};
+
+window.closeSaveCodes = function(){
+  document.getElementById('savecode-screen').classList.remove('open');
+  if(gameRunning&&!gameOver&&!document.getElementById('pause-screen').classList.contains('open')){
+    gamePaused=false;
+    document.getElementById('pause-btn').textContent='⏸ PAUSE';
+  }
+};
+
+window.exportSaveCode = function(){
+  const json=currentSaveJson();
+  if(!json){saveCodeMsg('No saved progress found yet. Launch or import a mission first.','var(--red)');return;}
+  document.getElementById('save-code-text').value=encodeSaveCode(json);
+  saveCodeMsg('Save code exported.','var(--green)');
+};
+
+window.copySaveCode = async function(){
+  const box=document.getElementById('save-code-text');
+  if(!box.value.trim())exportSaveCode();
+  box.select();
+  try{
+    await navigator.clipboard.writeText(box.value);
+    saveCodeMsg('Save code copied to clipboard.','var(--green)');
+  }catch(e){
+    document.execCommand('copy');
+    saveCodeMsg('Save code selected and copied if your browser allowed it.','var(--yellow)');
+  }
+};
+
+window.importSaveCode = function(){
+  const box=document.getElementById('save-code-text');
+  try{
+    const json=decodeSaveCode(box.value);
+    const parsed=JSON.parse(json);
+    if(!parsed||!parsed.ship||!parsed.planets)throw new Error('invalid');
+    state=normalizeState(parsed);
+    saveState();
+    gameRunning=true;gameOver=false;gamePaused=false;mapOpen=false;
+    document.getElementById('title-screen').style.display='none';
+    document.getElementById('gameover-screen').style.display='none';
+    document.getElementById('pause-screen').classList.remove('open');
+    document.getElementById('pause-btn').textContent='⏸ PAUSE';
+    closeSaveCodes();
+    updateHUD();
+    const sl=document.getElementById('sell-slider');
+    if(sl&&state.foodSellRatio!==undefined){
+      sl.value=Math.round(state.foodSellRatio*100);
+      document.getElementById('sell-pct-lbl').textContent=sl.value+'%';
+    }
+    if(isMobile){enableTouchControls();setupMapTouch();}
+    notify('Save code imported. Progress restored!','var(--green)');
+  }catch(e){
+    saveCodeMsg('That save code could not be imported. Check that the full text was pasted.','var(--red)');
+  }
+};
+
 window.openStation = function(){
   if(!state)return;
   gamePaused=true;
@@ -3060,6 +3177,7 @@ window.addEventListener('keydown', e=>{
   if(e.key==='Escape'){
     if(galaxyOpen){ closeGalaxyMap(); return; }
     if(document.getElementById('mothership-screen').classList.contains('open')){ closeMothershipDialogue(); return; }
+    if(document.getElementById('savecode-screen').classList.contains('open')){ closeSaveCodes(); return; }
     if(document.getElementById('station-screen').classList.contains('open')){ closeStation(); return; }
     if(document.getElementById('trade-screen').classList.contains('open')){ closeTradeRoutes(); return; }
     if(document.getElementById('bonds-screen').classList.contains('open')){ closeBonds(); return; }
