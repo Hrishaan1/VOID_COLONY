@@ -237,6 +237,13 @@
   .trade-btn.danger{background:rgba(255,45,85,0.1);border-color:var(--red);color:var(--red);}
   .trade-btn.danger:hover{background:var(--red);color:var(--bg);}
   .trade-btn:disabled{opacity:0.35;cursor:not-allowed;background:none;color:var(--text);border-color:var(--border);}
+  .dialogue-line{font-size:11px;line-height:1.6;color:var(--text-bright);margin-bottom:10px;}
+  .dialogue-actions{display:grid;gap:8px;margin-top:12px;}
+  .dialogue-btn{padding:9px 10px;background:rgba(0,212,255,0.08);border:1px solid var(--border);color:var(--text-bright);font-family:'Share Tech Mono',monospace;font-size:10px;text-align:left;cursor:pointer;line-height:1.35;}
+  .dialogue-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .dialogue-btn.danger:hover{border-color:var(--red);color:var(--red);}
+  .dialogue-btn:disabled{opacity:0.32;cursor:not-allowed;color:var(--text);border-color:var(--border);}
+  .dialogue-req{display:block;color:var(--yellow);font-size:9px;margin-top:3px;}
 
   /* Mobile HUD adjustments */  /* Mobile HUD adjustments */
   @media(max-width:600px){
@@ -494,6 +501,15 @@
     <div class="overlay-box">
       <div class="patch-scroll">
         <div class="patch-entry">
+          <div class="patch-version">v1.12 — Leviathan Diplomacy</div>
+          <ul class="patch-list">
+            <li>Massive hostile Motherships can warp in and siphon nearby colony resources</li>
+            <li>Added negotiation choices using Credits, Food, raider kills, or Laboratory modules</li>
+            <li>Failed diplomacy starts component combat against the Leviathan engines and hangar</li>
+            <li>Quantum Rewind can revive a destroyed hull by sacrificing Credits or a building</li>
+          </ul>
+        </div>
+        <div class="patch-entry">
           <div class="patch-version">v1.11 — Divergent Ram</div>
           <ul class="patch-list">
             <li>Added high-speed Collision Drive impacts against enemy raiders</li>
@@ -681,6 +697,34 @@
     <button class="overlay-btn" style="max-width:200px" onclick="closePatchNotes()">[ ESC ] CLOSE</button>
   </div>
 
+  <!-- MOTHERSHIP NEGOTIATION -->
+  <div class="overlay-screen" id="mothership-screen">
+    <div class="overlay-title">LEVIATHAN DIPLOMACY</div>
+    <div class="overlay-box" style="min-width:min(520px,92vw)">
+      <div class="dialogue-line" id="mothership-line"></div>
+      <div style="font-size:10px;color:var(--text);line-height:1.6">
+        Your reserves: <span id="mothership-reserves" style="color:var(--yellow)">—</span>
+      </div>
+      <div class="dialogue-actions" id="mothership-actions"></div>
+      <div id="mothership-msg" style="font-size:10px;text-align:center;margin-top:10px;min-height:14px;color:var(--yellow)"></div>
+    </div>
+    <button class="overlay-btn" style="max-width:200px" onclick="closeMothershipDialogue()">[ ESC ] CLOSE</button>
+  </div>
+
+  <!-- QUANTUM REWIND -->
+  <div class="overlay-screen" id="rewind-screen">
+    <div class="overlay-title">QUANTUM REWIND</div>
+    <div class="overlay-box" style="min-width:min(430px,92vw)">
+      <div class="dialogue-line">Quantum Rewind available. Will you sacrifice to survive?</div>
+      <div style="font-size:10px;color:var(--text);line-height:1.6" id="rewind-status"></div>
+      <div class="dialogue-actions">
+        <button class="dialogue-btn" id="rewind-credits-btn" onclick="quantumRewind('credits')"></button>
+        <button class="dialogue-btn" id="rewind-building-btn" onclick="quantumRewind('building')"></button>
+        <button class="dialogue-btn danger" onclick="declineQuantumRewind()">Accept the void</button>
+      </div>
+    </div>
+  </div>
+
   <div id="title-screen">
     <h1>VOID COLONY</h1>
     <div class="sub">Space Colonization Sim</div>
@@ -707,6 +751,7 @@
       <div style="color:#ffd700;font-size:10px">▸ Multiple colonies unlock freighters and trade route escort missions</div>
       <div style="color:#ffd700;font-size:10px">▸ Void Events can disrupt systems or reveal rare shortcuts</div>
       <div style="color:#ff2d55;font-size:10px">▸ High-speed enemy collisions trigger the Divergent Ram Black Flash</div>
+      <div style="color:#9b4dff;font-size:10px">▸ Leviathan Motherships can be negotiated with or disabled in combat</div>
       <div style="color:#ffd700;font-size:10px">▸ Sell food for credits via the HUD slider</div>
       <div style="color:#8ab8d4;font-size:10px">▸ Colonizing costs 20¢ · Moons have 1 slot</div>
       <div style="color:#00d4ff;font-size:10px">▸ Galaxy jumps cost more the farther you go</div>
@@ -768,11 +813,20 @@ const TRADE_RAIDER_HEALTH = 45;
 const TRADE_RAIDER_SPEED = 0.13;
 const ESCORT_WARP_FUEL = 8;
 const DIVERGENT_RAM_SPEED = 6.1;
-const DIVERGENT_RAM_FUEL_COST = 10;
+const DIVERGENT_RAM_FUEL_COST = -10;
 const DIVERGENT_RAM_DAMAGE = 180;
 const DIVERGENT_RAM_COOLDOWN = 900;
 const DIVERGENT_RAM_HITSTOP = 55;
 const FAILED_RAM_DAMAGE = 32;
+const MOTHERSHIP_CHECK_INTERVAL = 115000;
+const MOTHERSHIP_SPAWN_CHANCE = 0.38;
+const MOTHERSHIP_INTERACT_RANGE = 155;
+const MOTHERSHIP_DRAIN_RANGE = 720;
+const MOTHERSHIP_DRAIN_FOOD = 0.28;
+const MOTHERSHIP_DRAIN_CREDITS = 0.08;
+const MOTHERSHIP_COMPONENT_HEALTH = 260;
+const MOTHERSHIP_RAM_DAMAGE = 150;
+const MOTHERSHIP_RAM_SPEED = 7.2;
 
 // ==== GALAXY TRAVEL CONSTANTS ====
 const SYSTEM_TRAVEL_COST = 100;   // credits per home-distance unit
@@ -961,6 +1015,11 @@ function defaultState(){
     freighters:[],
     tradeRaiders:[],
     tradeRaidTimer:30000,
+    mothership:null,
+    mothershipTimer:70000,
+    raidersDestroyedSession:0,
+    buildingHistory:[],
+    rewindPending:false,
     ramCooldown:0,
     ramEffects:[],
     shipAfterimages:[],
@@ -1063,6 +1122,11 @@ function normalizeState(s){
   if(!Array.isArray(s.freighters))s.freighters=[];
   if(!Array.isArray(s.tradeRaiders))s.tradeRaiders=[];
   if(s.tradeRaidTimer===undefined)s.tradeRaidTimer=45000;
+  if(s.mothershipTimer===undefined)s.mothershipTimer=70000;
+  if(s.mothership===undefined)s.mothership=null;
+  if(s.raidersDestroyedSession===undefined)s.raidersDestroyedSession=0;
+  if(!Array.isArray(s.buildingHistory))s.buildingHistory=[];
+  if(s.rewindPending===undefined)s.rewindPending=false;
   if(s.ramCooldown===undefined)s.ramCooldown=0;
   if(!Array.isArray(s.ramEffects))s.ramEffects=[];
   if(!Array.isArray(s.shipAfterimages))s.shipAfterimages=[];
@@ -1155,6 +1219,14 @@ function countLabs(){
     for(const sl of b.slots)if(sl==='lab')labs++;
   }
   return labs;
+}
+function countBuiltModules(types=['farm','fuel','lab']){
+  if(!state)return 0;
+  let count=0;
+  for(const b of[...state.planets,...state.moons]){
+    for(const sl of b.slots)if(types.includes(sl))count++;
+  }
+  return count;
 }
 function getStationPos(){return {x:0,y:-(state&&state.star?state.star.radius:58)-120};}
 function getTradeHubPos(){return getStationPos();}
@@ -1252,6 +1324,8 @@ function enterSystem(idx,arrivalLabel){
   state.camera.y=state.ship.y;
   state.enemies=[];
   state.tradeRaiders=[];
+  state.mothership=null;
+  state.mothershipTimer=65000;
   const hub=getTradeHubPos();
   for(const f of (state.freighters||[])){
     f.x=hub.x+rnd(-28,28);f.y=hub.y+rnd(-28,28);
@@ -1320,7 +1394,7 @@ window.addEventListener('mousemove', e=>{
 // Left-click fires in mouse mode
 window.addEventListener('mousedown', e=>{
   if(e.button===0 && mouseAimMode && gameRunning && !gameOver && !gamePaused
-     && !e.target.closest('#planet-panel,#map-overlay,#hud,#pause-screen,#market-screen,#bonds-screen,#research-screen,#station-screen,#patchnotes-screen')){
+     && !e.target.closest('#planet-panel,#map-overlay,#hud,#pause-screen,#market-screen,#bonds-screen,#research-screen,#station-screen,#mothership-screen,#rewind-screen,#patchnotes-screen')){
     fireLaser();
   }
 });
@@ -1633,6 +1707,8 @@ function tickBuilding(dt){
         sl.progress+=dt;
         if(sl.progress>=sl.total){
           body.slots[i]=sl.type;
+          state.buildingHistory=(state.buildingHistory||[]).filter(h=>!(h.bodyId===body.id&&h.slotIdx===i));
+          state.buildingHistory.push({bodyId:body.id,slotIdx:i,type:sl.type,time:Date.now()});
           const label=sl.type==='farm'?'🌾 Farm':sl.type==='fuel'?'⚡ Fuel Gen':'🔬 Laboratory';
           const color=sl.type==='farm'?'var(--green)':sl.type==='fuel'?'var(--fuel-color)':'var(--accent)';
           notify(`${label} online on ${body.name}!`,color);
@@ -1711,6 +1787,12 @@ window.addEventListener('keydown',e=>{
 function interactNearest(){
   if(!state)return;
   const s=state.ship;
+  if(state.mothership&&state.mothership.active){
+    const m=state.mothership;
+    if(Math.hypot(m.x-s.x,m.y-s.y)<MOTHERSHIP_INTERACT_RANGE){
+      openMothershipDialogue();return;
+    }
+  }
   for(const ev of (state.activeVoidEvents||[])){
     if(ev.type!=='comet'||ev.mined)continue;
     const dist=Math.hypot(ev.x-s.x,ev.y-s.y);
@@ -2621,6 +2703,247 @@ window.buyResearch = function(id){
   updateResearchUI();updateHUD();saveState();
 };
 
+// ===== LEVIATHAN DIPLOMACY =====
+function spawnMothership(){
+  if(!state||state.mothership)return;
+  const colonies=playerColonies();
+  const anchor=colonies.length?colonies[Math.floor(Math.random()*colonies.length)]:state.planets[0];
+  const bp=bodyPos(anchor);
+  const a=Math.random()*Math.PI*2;
+  state.mothership={
+    active:true,
+    x:bp.x+Math.cos(a)*520,
+    y:bp.y+Math.sin(a)*520,
+    angle:a+Math.PI,
+    mode:'negotiation',
+    enginesHp:MOTHERSHIP_COMPONENT_HEALTH,
+    hangarHp:MOTHERSHIP_COMPONENT_HEALTH,
+    maxComponentHp:MOTHERSHIP_COMPONENT_HEALTH,
+    phrase:Math.floor(Math.random()*3),
+    lastDrainNotice:0,
+    spawnedAt:performance.now(),
+  };
+  state.screenShake=Math.max(state.screenShake||0,12);
+  notify('⚠ Massive Signature Detected', 'var(--red)');
+}
+
+function dismissMothership(message='Leviathan jump signature fading.'){
+  if(!state||!state.mothership)return;
+  const m=state.mothership;
+  state.ramEffects.push({
+    x:m.x,y:m.y,created:performance.now(),life:560,
+    accent:'#9b4dff',
+    bolts:makeBlackFlashBolts(m.x,m.y,16),
+  });
+  state.mothership=null;
+  closeMothershipDialogue();
+  notify(message,'var(--accent)');
+  saveState();
+}
+
+function openMothershipDialogue(){
+  if(!state||!state.mothership)return;
+  gamePaused=true;
+  document.getElementById('pause-screen').classList.remove('open');
+  updateMothershipDialogue();
+  document.getElementById('mothership-screen').classList.add('open');
+}
+
+window.closeMothershipDialogue=function(){
+  document.getElementById('mothership-screen').classList.remove('open');
+  if(gameRunning&&!gameOver&&!state.rewindPending)gamePaused=false;
+};
+
+function mothershipLine(){
+  const lines=[
+    'This system is now under our jurisdiction. Relinquish your harvest or be erased.',
+    'Our fuel cells are depleted. We will strip this planet to replenish them.',
+    'Identify yourself, scavenger. Why should we not open fire?',
+  ];
+  return lines[(state.mothership&&state.mothership.phrase)||0];
+}
+
+function updateMothershipDialogue(){
+  const m=state.mothership;
+  if(!m)return;
+  document.getElementById('mothership-line').textContent=`Mothership: "${mothershipLine()}"`;
+  document.getElementById('mothership-reserves').textContent=`${Math.floor(state.credits)}¢ · ${Math.floor(state.food)} food · Raider kills this session: ${state.raidersDestroyedSession||0} · Labs: ${countLabs()}`;
+  const actions=document.getElementById('mothership-actions');
+  actions.innerHTML='';
+  const options=[
+    {id:'bribe',label:'Player [Bribe]: I have 500 Credits here. Take it as a transit fee and move along.',req:'Requires 500 Credits',ok:state.credits>=500},
+    {id:'trade',label:'Player [Trade]: I can offer 200 units of Food for your crew if you leave my generators alone.',req:'Requires 200 Food',ok:state.food>=200},
+    {id:'intimidate',label:"Player [Intimidate]: Look at the wreckage around me. You will be next if you do not warp out in ten seconds.",req:'Requires 10 raider kills this session',ok:(state.raidersDestroyedSession||0)>=10},
+    {id:'deceive',label:"Player [Deceive]: You are wasting time here. My scanners show a defenseless freighter fleet two sectors away.",req:'Requires an active Laboratory Module',ok:countLabs()>0},
+  ];
+  for(const opt of options){
+    const btn=document.createElement('button');
+    btn.className='dialogue-btn';
+    btn.disabled=!opt.ok;
+    btn.innerHTML=`${opt.label}<span class="dialogue-req">${opt.req}</span>`;
+    btn.addEventListener('click',()=>resolveMothershipChoice(opt.id));
+    actions.appendChild(btn);
+  }
+  const fight=document.createElement('button');
+  fight.className='dialogue-btn danger';
+  fight.textContent='End negotiations. Target engines and hangar.';
+  fight.addEventListener('click',()=>startMothershipCombat('Negotiations abandoned. Leviathan weapons are hot.'));
+  actions.appendChild(fight);
+}
+
+function resolveMothershipChoice(id){
+  if(!state||!state.mothership)return;
+  const msg=document.getElementById('mothership-msg');
+  if(id==='bribe'&&state.credits>=500){
+    state.credits-=500;updateHUD();
+    msg.textContent='Mothership: "A wise investment in your continued existence. We are leaving."';
+    setTimeout(()=>dismissMothership('Leviathan accepted the transit fee.'),900);
+    return;
+  }
+  if(id==='trade'&&state.food>=200){
+    state.food-=200;updateHUD();
+    msg.textContent='Mothership: "Provisioning accepted. Calculating new jump coordinates."';
+    setTimeout(()=>dismissMothership('Leviathan departed with your provisions.'),900);
+    return;
+  }
+  if(id==='intimidate'&&(state.raidersDestroyedSession||0)>=10){
+    msg.textContent='Mothership: "Noted. This system is not worth the attrition."';
+    setTimeout(()=>dismissMothership('Leviathan withdrew under threat.'),900);
+    return;
+  }
+  if(id==='deceive'&&countLabs()>0){
+    msg.textContent='Mothership: "Scanning... data seems legitimate. Pursuing higher-value targets."';
+    setTimeout(()=>dismissMothership('Leviathan chased your false telemetry.'),900);
+    return;
+  }
+  startMothershipCombat('Mothership: "Arrogance. We shall see how your hull holds up against a fleet."');
+}
+
+function startMothershipCombat(message){
+  if(!state||!state.mothership)return;
+  state.mothership.mode='combat';
+  closeMothershipDialogue();
+  notify(message,'var(--red)');
+}
+
+function mothershipComponents(){
+  const m=state&&state.mothership;
+  if(!m)return [];
+  return [
+    {key:'enginesHp',label:'ENGINES',x:m.x-58,y:m.y+30,r:30},
+    {key:'hangarHp',label:'HANGAR',x:m.x+48,y:m.y-8,r:34},
+  ];
+}
+
+function damageMothershipComponent(comp,damage,ram=false){
+  const m=state.mothership;
+  if(!m||!comp||m[comp.key]<=0)return;
+  m[comp.key]=Math.max(0,m[comp.key]-damage);
+  if(ram){
+    state.ramEffects.push({
+      x:comp.x,y:comp.y,created:performance.now(),life:480,
+      accent:Math.random()<0.5?'#ff003d':'#9b4dff',
+      bolts:makeBlackFlashBolts(comp.x,comp.y,15),
+    });
+    state.hitStopTimer=Math.max(state.hitStopTimer||0,DIVERGENT_RAM_HITSTOP);
+    state.screenShake=Math.max(state.screenShake||0,18);
+    addShipRamAfterimage();
+    notify(`BLACK FLASH ruptured ${comp.label}!`, '#ff2d55');
+  }
+  if(m.enginesHp<=0&&m.hangarHp<=0){
+    state.credits+=180;
+    dismissMothership('Leviathan disabled! Salvage bounty +180¢');
+    updateHUD();
+  }
+}
+
+function updateMothership(dt){
+  if(!state)return;
+  state.mothershipTimer=(state.mothershipTimer||0)+dt;
+  if(!state.mothership&&state.mothershipTimer>=MOTHERSHIP_CHECK_INTERVAL){
+    state.mothershipTimer=0;
+    if(playerColonies().length&&Math.random()<MOTHERSHIP_SPAWN_CHANCE)spawnMothership();
+  }
+  const m=state.mothership;
+  if(!m||!m.active)return;
+  m.angle+=0.00025*dt;
+  const sec=dt/1000;
+  let draining=false;
+  for(const b of playerColonies()){
+    const bp=bodyPos(b);
+    if(Math.hypot(bp.x-m.x,bp.y-m.y)<MOTHERSHIP_DRAIN_RANGE){
+      draining=true;
+      const farmCount=b.slots.filter(sl=>sl==='farm').length;
+      const fuelCount=b.slots.filter(sl=>sl==='fuel').length;
+      state.food=Math.max(0,state.food-MOTHERSHIP_DRAIN_FOOD*(1+farmCount)*sec);
+      state.credits=Math.max(0,state.credits-MOTHERSHIP_DRAIN_CREDITS*(1+fuelCount)*sec);
+    }
+  }
+  if(draining&&performance.now()-(m.lastDrainNotice||0)>8500){
+    m.lastDrainNotice=performance.now();
+    notify('⚠ Leviathan siphoning nearby colony resources', 'var(--red)');
+  }
+  if(m.mode==='combat'){
+    m.spawnTimer=(m.spawnTimer||0)+dt;
+    if(m.spawnTimer>9000){
+      m.spawnTimer=0;
+      if((state.enemies||[]).length<8){
+        spawnEnemy(true);
+        const e=state.enemies[state.enemies.length-1];
+        if(e){e.x=m.x+rnd(-110,110);e.y=m.y+rnd(-110,110);e.targetPlanetId=(state.planets[0]||{}).id;}
+      }
+    }
+    if(Math.hypot(state.ship.x-m.x,state.ship.y-m.y)<520&&Math.random()<0.012){
+      damagePlayer(10,'⚠ Leviathan battery strike!');
+    }
+  }
+  updateMothershipLaserHits();
+  resolveMothershipRam();
+}
+
+function updateMothershipLaserHits(){
+  const m=state.mothership;
+  if(!m||m.mode!=='combat')return;
+  state.playerLasers=(state.playerLasers||[]).filter(l=>{
+    if(l.life<=0)return false;
+    for(const comp of mothershipComponents()){
+      if(m[comp.key]<=0)continue;
+      const hit=l.type==='pulse'?Math.hypot(l.x-comp.x,l.y-comp.y)<l.radius+comp.r:Math.hypot(l.x-comp.x,l.y-comp.y)<comp.r;
+      if(hit){
+        damageMothershipComponent(comp,getWeaponDamage(l.type||'laser'));
+        return l.type==='pulse';
+      }
+    }
+    return true;
+  });
+}
+
+function resolveMothershipRam(){
+  const m=state.mothership;
+  if(!m||m.mode!=='combat')return;
+  const s=state.ship;
+  for(const comp of mothershipComponents()){
+    if(m[comp.key]<=0)continue;
+    const dx=s.x-comp.x,dy=s.y-comp.y;
+    const dist=Math.hypot(dx,dy)||1;
+    if(dist>comp.r+12)continue;
+    const speed=Math.hypot(s.vx,s.vy);
+    const nx=dx/dist,ny=dy/dist;
+    if(speed>=MOTHERSHIP_RAM_SPEED&&state.fuel>=DIVERGENT_RAM_FUEL_COST&&(state.ramCooldown||0)<=0){
+      state.fuel=Math.max(0,state.fuel-DIVERGENT_RAM_FUEL_COST);
+      state.ramCooldown=DIVERGENT_RAM_COOLDOWN;
+      damageMothershipComponent(comp,MOTHERSHIP_RAM_DAMAGE,true);
+      s.vx=nx*Math.max(3,speed*0.35);
+      s.vy=ny*Math.max(3,speed*0.35);
+    } else if((m.lastCollisionHit||0)+900<performance.now()){
+      m.lastCollisionHit=performance.now();
+      s.x=comp.x+nx*(comp.r+12);s.y=comp.y+ny*(comp.r+12);
+      s.vx+=nx*2.8;s.vy+=ny*2.8;
+      damagePlayer(FAILED_RAM_DAMAGE+14,'⚠ Leviathan hull impact!');
+    }
+  }
+}
+
 // ===== SOLAR BONDS =====
 window.openBonds = function(){
   if(!state) return;
@@ -2736,6 +3059,7 @@ window.addEventListener('keydown', e=>{
   if((e.key==='p'||e.key==='P') && gameRunning && !gameOver) togglePause();
   if(e.key==='Escape'){
     if(galaxyOpen){ closeGalaxyMap(); return; }
+    if(document.getElementById('mothership-screen').classList.contains('open')){ closeMothershipDialogue(); return; }
     if(document.getElementById('station-screen').classList.contains('open')){ closeStation(); return; }
     if(document.getElementById('trade-screen').classList.contains('open')){ closeTradeRoutes(); return; }
     if(document.getElementById('bonds-screen').classList.contains('open')){ closeBonds(); return; }
@@ -2846,8 +3170,92 @@ function damagePlayer(amount,label){
     state.playerHp=Math.max(0,curHp-damage);
   }
   notify(damage>0?`${label} ${Math.round(state.playerHp)} HP remaining`:'🛡 Shield absorbed the impact!',damage>0?'var(--red)':'var(--accent)');
-  if(state.playerHp<=0)triggerGameOver();
+  if(state.playerHp<=0)offerQuantumRewind();
 }
+
+function findSacrificeBuilding(){
+  if(!state)return null;
+  const hist=[...(state.buildingHistory||[])].reverse();
+  for(const h of hist){
+    if(!['farm','fuel'].includes(h.type))continue;
+    const body=bodyById(h.bodyId);
+    if(body&&body.slots[h.slotIdx]===h.type)return {body,slotIdx:h.slotIdx,type:h.type};
+  }
+  for(const body of[...state.planets,...state.moons]){
+    for(let i=body.slots.length-1;i>=0;i--){
+      if(body.slots[i]==='farm'||body.slots[i]==='fuel')return {body,slotIdx:i,type:body.slots[i]};
+    }
+  }
+  return null;
+}
+
+function nearestColonyPos(){
+  const colonies=playerColonies();
+  if(!colonies.length)return {...state.ship};
+  let best=colonies[0],bestD=Infinity;
+  for(const b of colonies){
+    const bp=bodyPos(b);
+    const d=Math.hypot(bp.x-state.ship.x,bp.y-state.ship.y);
+    if(d<bestD){best=b;bestD=d;}
+  }
+  const bp=bodyPos(best);
+  return {x:bp.x,y:bp.y-best.radius-70};
+}
+
+function offerQuantumRewind(){
+  if(!state||state.rewindPending)return;
+  state.rewindPending=true;
+  gamePaused=true;
+  document.getElementById('rewind-screen').classList.add('open');
+  updateRewindUI();
+}
+
+function updateRewindUI(){
+  const sacrifice=findSacrificeBuilding();
+  document.getElementById('rewind-status').innerHTML=`Credits: <span style="color:var(--yellow)">${Math.floor(state.credits)}¢</span><br>Available building sacrifice: <span style="color:var(--yellow)">${sacrifice?`${sacrifice.type} on ${sacrifice.body.name}`:'none'}</span>`;
+  const creditBtn=document.getElementById('rewind-credits-btn');
+  creditBtn.innerHTML='Pay the Fine<span class="dialogue-req">Lose 50% of Credits and respawn at nearest colony</span>';
+  creditBtn.disabled=state.credits<1;
+  const buildBtn=document.getElementById('rewind-building-btn');
+  buildBtn.innerHTML='Salvage Parts<span class="dialogue-req">Sacrifice your newest Farm or Fuel Generator and repair here</span>';
+  buildBtn.disabled=!sacrifice;
+}
+
+window.quantumRewind=function(mode){
+  if(!state||!state.rewindPending)return;
+  const maxHull=getMaxHull();
+  if(mode==='credits'){
+    if(state.credits<1){updateRewindUI();return;}
+    state.credits=Math.floor(state.credits*0.5);
+    const pos=nearestColonyPos();
+    state.ship.x=pos.x;state.ship.y=pos.y;
+    state.ship.vx=0;state.ship.vy=0;
+    state.camera.x=pos.x;state.camera.y=pos.y;
+  } else {
+    const sacrifice=findSacrificeBuilding();
+    if(!sacrifice){updateRewindUI();return;}
+    sacrifice.body.slots[sacrifice.slotIdx]=null;
+    state.buildingHistory=(state.buildingHistory||[]).filter(h=>!(h.bodyId===sacrifice.body.id&&h.slotIdx===sacrifice.slotIdx));
+    state.ship.vx*=0.2;state.ship.vy*=0.2;
+  }
+  state.playerHp=Math.max(45,maxHull*0.5);
+  state.playerShield=Math.min(getMaxShield(),state.playerShield||0);
+  state.rewindPending=false;
+  gamePaused=false;
+  gameOver=false;
+  document.getElementById('rewind-screen').classList.remove('open');
+  state.ramEffects.push({x:state.ship.x,y:state.ship.y,created:performance.now(),life:650,accent:'#00d4ff',bolts:makeBlackFlashBolts(state.ship.x,state.ship.y,12)});
+  state.screenShake=Math.max(state.screenShake||0,10);
+  notify('Quantum Rewind complete. Hull reassembled.', 'var(--accent)');
+  updateHUD();saveState();
+};
+
+window.declineQuantumRewind=function(){
+  if(!state)return;
+  state.rewindPending=false;
+  document.getElementById('rewind-screen').classList.remove('open');
+  triggerGameOver(true);
+};
 
 function addShipRamAfterimage(){
   const trail=(state.shipTrail||[]).slice(-12);
@@ -2921,6 +3329,7 @@ function resolveRamTarget(target,kind){
     if(target.hp<=0&&!target._bountyPaid){
       target._bountyPaid=true;
       state.credits+=kind==='enemy'?40:30;
+      state.raidersDestroyedSession=(state.raidersDestroyedSession||0)+1;
       notify(`BLACK FLASH vaporized ${kind==='enemy'?'enemy':'escort raider'}! +${kind==='enemy'?40:30}¢`, '#ff2d55');
     }
   } else if((target.lastCollisionHit||0)+850<performance.now()){
@@ -3085,6 +3494,7 @@ function updateEnemies(dt, now){
           r.hp -= getWeaponDamage('pulse');
           if(r.hp<=0&&!r._bountyPaid){
             r._bountyPaid=true;
+            state.raidersDestroyedSession=(state.raidersDestroyedSession||0)+1;
             notify('💥 Escort raider destroyed! +30¢ bounty','var(--green)');
             state.credits += 30;
           }
@@ -3098,6 +3508,7 @@ function updateEnemies(dt, now){
           e.state = 'attack';
           if(e.hp<=0&&!e._bountyPaid){
             e._bountyPaid=true;
+            state.raidersDestroyedSession=(state.raidersDestroyedSession||0)+1;
             notify('💥 Enemy destroyed! +40¢ bounty','var(--green)');
             state.credits += 40;
           }
@@ -3110,6 +3521,7 @@ function updateEnemies(dt, now){
         r.hp -= getWeaponDamage(l.type||'laser');
         if(r.hp<=0&&!r._bountyPaid){
           r._bountyPaid=true;
+          state.raidersDestroyedSession=(state.raidersDestroyedSession||0)+1;
           notify('💥 Escort raider destroyed! +30¢ bounty','var(--green)');
           state.credits += 30;
         }
@@ -3122,6 +3534,7 @@ function updateEnemies(dt, now){
         e.state = 'attack'; // ship retaliates when shot
         if(e.hp<=0&&!e._bountyPaid){
           e._bountyPaid=true;
+          state.raidersDestroyedSession=(state.raidersDestroyedSession||0)+1;
           notify('💥 Enemy destroyed! +40¢ bounty','var(--green)');
           state.credits += 40;
         }
@@ -3453,6 +3866,7 @@ function update(dt){
   tickBuilding(dt);
   updateEnemies(dt, performance.now());
   updateTradeRoutes(dt);
+  updateMothership(dt);
   updateVoidEvents(dt);
 
   if(mouseAimMode){
@@ -3682,7 +4096,8 @@ function update(dt){
   updateHUD();
 }
 
-function triggerGameOver(){
+function triggerGameOver(force=false){
+  if(!force&&state&&state.playerHp<=0){offerQuantumRewind();return;}
   gameOver=true;
   if(mouseAimMode) toggleMouseAim(); // reset cursor
   let c=0,f=0,g=0,l=0;
@@ -3708,6 +4123,7 @@ function draw(){
   drawStar(ctx,state.star,state.tick);
   drawSpaceStation(ctx,state.tick);
   drawVoidEvents(ctx,state.tick);
+  drawMothership(ctx,state.tick);
 
   // Orbital guides
   for(const p of state.planets){
@@ -3742,6 +4158,18 @@ function draw(){
     ctx.beginPath();ctx.arc(bp.x,bp.y,harvestR,0,Math.PI*2);
     ctx.strokeStyle=inRange?'rgba(57,255,20,0.35)':'rgba(57,255,20,0.10)';
     ctx.lineWidth=1;ctx.setLineDash([3,8]);ctx.stroke();ctx.setLineDash([]);
+  }
+  if(state.mothership&&state.mothership.active){
+    const m=state.mothership;
+    const dist=Math.hypot(m.x-state.ship.x,m.y-state.ship.y);
+    if(dist<MOTHERSHIP_INTERACT_RANGE*1.7){
+      ctx.beginPath();ctx.arc(m.x,m.y,MOTHERSHIP_INTERACT_RANGE,0,Math.PI*2);
+      ctx.strokeStyle=`rgba(255,45,85,${Math.max(0.12,1-dist/(MOTHERSHIP_INTERACT_RANGE*1.7))*0.45})`;
+      ctx.lineWidth=1.4;ctx.setLineDash([6,7]);ctx.stroke();ctx.setLineDash([]);
+      ctx.fillStyle='rgba(255,45,85,0.9)';
+      ctx.font='10px "Share Tech Mono"';ctx.textAlign='center';
+      ctx.fillText('[E] Negotiate',m.x,m.y-105);
+    }
   }
 
   // Proximity rings
@@ -4026,6 +4454,47 @@ function drawFlashPaletteWash(ctx){
   ctx.fillStyle=`rgba(0,0,0,${0.42*strength})`;
   ctx.fillRect(0,0,W,H);
   ctx.restore();
+}
+
+function drawMothership(ctx,tick){
+  const m=state&&state.mothership;
+  if(!m||!m.active)return;
+  ctx.save();
+  ctx.translate(m.x,m.y);
+  ctx.rotate(Math.sin(tick*0.006)*0.025);
+  const pulse=0.5+0.5*Math.sin(tick*0.05);
+  const aura=ctx.createRadialGradient(0,0,20,0,0,170);
+  aura.addColorStop(0,`rgba(255,45,85,${0.12+0.08*pulse})`);
+  aura.addColorStop(1,'transparent');
+  ctx.beginPath();ctx.arc(0,0,170,0,Math.PI*2);ctx.fillStyle=aura;ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(0,-86);ctx.lineTo(86,-36);ctx.lineTo(112,10);ctx.lineTo(64,70);
+  ctx.lineTo(0,92);ctx.lineTo(-64,70);ctx.lineTo(-112,10);ctx.lineTo(-86,-36);
+  ctx.closePath();
+  ctx.fillStyle='#12040a';ctx.strokeStyle=m.mode==='combat'?'#ff2d55':'#9b4dff';ctx.lineWidth=3;
+  ctx.fill();ctx.stroke();
+  ctx.beginPath();ctx.ellipse(0,-10,44,26,0,0,Math.PI*2);
+  ctx.fillStyle='rgba(0,0,0,0.72)';ctx.strokeStyle='rgba(255,45,85,0.8)';ctx.lineWidth=2;ctx.fill();ctx.stroke();
+  ctx.beginPath();ctx.rect(-82,22,48,32);ctx.rect(28,-28,58,42);
+  ctx.fillStyle='rgba(255,45,85,0.16)';ctx.strokeStyle='rgba(255,45,85,0.68)';ctx.lineWidth=1.5;ctx.fill();ctx.stroke();
+  ctx.restore();
+
+  for(const comp of mothershipComponents()){
+    const hp=Math.max(0,state.mothership[comp.key]/state.mothership.maxComponentHp);
+    ctx.beginPath();ctx.arc(comp.x,comp.y,comp.r+3,0,Math.PI*2);
+    ctx.strokeStyle=state.mothership[comp.key]<=0?'rgba(57,255,20,0.6)':'rgba(255,45,85,0.46)';
+    ctx.lineWidth=1.2;ctx.stroke();
+    ctx.fillStyle='rgba(0,0,0,0.62)';ctx.fillRect(comp.x-35,comp.y+comp.r+9,70,5);
+    ctx.fillStyle=hp>0.45?'#ff2d55':hp>0?'#ffd700':'#39ff14';
+    ctx.fillRect(comp.x-35,comp.y+comp.r+9,70*hp,5);
+    ctx.strokeStyle='rgba(255,255,255,0.18)';ctx.lineWidth=0.5;ctx.strokeRect(comp.x-35,comp.y+comp.r+9,70,5);
+    ctx.fillStyle='rgba(255,210,225,0.82)';
+    ctx.font='9px "Share Tech Mono"';ctx.textAlign='center';
+    ctx.fillText(comp.label,comp.x,comp.y+comp.r+25);
+  }
+  ctx.fillStyle=m.mode==='combat'?'rgba(255,45,85,0.92)':'rgba(155,77,255,0.92)';
+  ctx.font='11px "Orbitron"';ctx.textAlign='center';
+  ctx.fillText(m.mode==='combat'?'LEVIATHAN HOSTILE':'LEVIATHAN',m.x,m.y+128);
 }
 
 function drawStar(ctx,star,tick){
