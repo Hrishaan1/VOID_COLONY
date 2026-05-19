@@ -842,7 +842,7 @@ const DIVERGENT_RAM_FUEL_COST = -10;
 const DIVERGENT_RAM_DAMAGE = 180;
 const DIVERGENT_RAM_COOLDOWN = 900;
 const DIVERGENT_RAM_HITSTOP = 55;
-const FAILED_RAM_DAMAGE = 32;
+const FAILED_RAM_DAMAGE = 15;
 const MOTHERSHIP_CHECK_INTERVAL = 115000;
 const MOTHERSHIP_SPAWN_CHANCE = 0.38;
 const MOTHERSHIP_INTERACT_RANGE = 155;
@@ -2162,6 +2162,21 @@ function drawMap(){
     const rx=wx(r.x), ry=wy(r.y);
     mapCtx.beginPath();mapCtx.arc(rx,ry,5,0,Math.PI*2);
     mapCtx.fillStyle='rgba(255,45,85,0.85)';mapCtx.fill();
+  }
+
+  if(state.mothership && state.mothership.active){
+    const mx=wx(state.mothership.x), my=wy(state.mothership.y);
+    const mg = mapCtx.createRadialGradient(mx,my,0,mx,my,22);
+    mg.addColorStop(0,'rgba(255,80,80,0.35)');
+    mg.addColorStop(1,'transparent');
+    mapCtx.beginPath();mapCtx.arc(mx,my,22,0,Math.PI*2);mapCtx.fillStyle=mg;mapCtx.fill();
+    mapCtx.save();mapCtx.translate(mx,my);mapCtx.rotate(state.mothership.angle||0);
+    mapCtx.beginPath();mapCtx.moveTo(0,-10);mapCtx.lineTo(10,10);mapCtx.lineTo(-10,10);mapCtx.closePath();
+    mapCtx.fillStyle='rgba(255,60,60,0.95)';mapCtx.fill();
+    mapCtx.restore();
+    mapCtx.fillStyle='rgba(255,180,180,0.95)';
+    mapCtx.font='9px "Share Tech Mono"';mapCtx.textAlign='center';
+    mapCtx.fillText('MOTHERSHIP',mx,my-16);
   }
 
   // Ship — always shown, centered if recentered
