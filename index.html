@@ -331,6 +331,7 @@
       <div class="map-legend-item"><div class="map-legend-dot" style="background:#39ff14"></div>Moon (colonized)</div>
       <div class="map-legend-item"><div class="map-legend-dot" style="background:#fff"></div>Ship</div>
       <div class="map-legend-item"><div class="map-legend-dot" style="background:#ffd700"></div>Freighter</div>
+      <div class="map-legend-item"><div class="map-legend-dot" style="background:#ff2d55"></div>Raider</div>
       <span style="margin-left:auto;color:var(--accent);font-size:9px">DRAG TO MOVE · SCROLL TO ZOOM</span>
     </div>
   </div>
@@ -524,6 +525,14 @@
     <div class="overlay-title">PATCH NOTES</div>
     <div class="overlay-box">
       <div class="patch-scroll">
+        <div class="patch-entry">
+          <div class="patch-version">v1.12.1 — Leviathan Ship Remodel</div>
+          <ul class="patch-list">
+            <li>Remodeled the Enemy Leviathan from a UFO type ship to a more realistic ship.</li>
+            <li>Added hostile raider revenge feature - if hostile raiders are within 560px of you black flashing another raider, they call a aggravtaed Leviathan to the system.</li>
+            <li>Made hostile raiders appear on the map.</li>
+          </ul>
+        </div>
         <div class="patch-entry">
           <div class="patch-version">v1.12 — Leviathan Diplomacy</div>
           <ul class="patch-list">
@@ -852,6 +861,8 @@ const MOTHERSHIP_DRAIN_CREDITS = 0.08;
 const MOTHERSHIP_COMPONENT_HEALTH = 260;
 const MOTHERSHIP_RAM_DAMAGE = 150;
 const MOTHERSHIP_RAM_SPEED = 7.2;
+const BLACK_FLASH_WITNESS_RANGE = 560;
+const BLACK_FLASH_REVENGE_DELAY = 15000;
 
 // ==== GALAXY TRAVEL CONSTANTS ====
 const SYSTEM_TRAVEL_COST = 100;   // credits per home-distance unit
@@ -2158,6 +2169,29 @@ function drawMap(){
     mapCtx.font='8px "Share Tech Mono"';mapCtx.textAlign='center';
     mapCtx.fillText(f.underAttack?'SOS':'FR',fx,fy+18);
   }
+
+  for(const e of (state.enemies||[])){
+    if(!e||e.hp<=0)continue;
+    const ex=wx(e.x), ey=wy(e.y);
+    const isAggro=e.state==='attack'||e.state==='retaliate';
+    const isWitness=!!e._mothershipRevengeAt;
+    const glow=mapCtx.createRadialGradient(ex,ey,0,ex,ey,isWitness?16:isAggro?13:9);
+    glow.addColorStop(0,isWitness?'rgba(255,215,0,0.28)':isAggro?'rgba(255,45,85,0.25)':'rgba(255,45,85,0.14)');
+    glow.addColorStop(1,'transparent');
+    mapCtx.beginPath();mapCtx.arc(ex,ey,isWitness?16:isAggro?13:9,0,Math.PI*2);mapCtx.fillStyle=glow;mapCtx.fill();
+    mapCtx.save();mapCtx.translate(ex,ey);mapCtx.rotate(e.angle||0);
+    mapCtx.beginPath();mapCtx.moveTo(8,0);mapCtx.lineTo(-6,-5);mapCtx.lineTo(-3,0);mapCtx.lineTo(-6,5);mapCtx.closePath();
+    mapCtx.fillStyle=isWitness?'rgba(255,215,0,0.95)':'rgba(255,45,85,0.95)';
+    mapCtx.strokeStyle='rgba(255,220,230,0.75)';mapCtx.lineWidth=0.8;
+    mapCtx.fill();mapCtx.stroke();
+    mapCtx.restore();
+    if(isAggro||isWitness){
+      mapCtx.fillStyle=isWitness?'rgba(255,215,0,0.92)':'rgba(255,120,145,0.92)';
+      mapCtx.font='8px "Share Tech Mono"';mapCtx.textAlign='center';
+      mapCtx.fillText(isWitness?'CALL':'RAID',ex,ey+18);
+    }
+  }
+
   for(const r of (state.tradeRaiders||[])){
     const rx=wx(r.x), ry=wy(r.y);
     mapCtx.beginPath();mapCtx.arc(rx,ry,5,0,Math.PI*2);
@@ -2836,7 +2870,7 @@ window.buyResearch = function(id){
 };
 
 // ===== LEVIATHAN DIPLOMACY =====
-function spawnMothership(){
+function spawnMothership(opts={}){
   if(!state||state.mothership)return;
   const colonies=playerColonies();
   const anchor=colonies.length?colonies[Math.floor(Math.random()*colonies.length)]:state.planets[0];
@@ -2847,16 +2881,16 @@ function spawnMothership(){
     x:bp.x+Math.cos(a)*520,
     y:bp.y+Math.sin(a)*520,
     angle:a+Math.PI,
-    mode:'negotiation',
+    mode:opts.mode||'negotiation',
     enginesHp:MOTHERSHIP_COMPONENT_HEALTH,
     hangarHp:MOTHERSHIP_COMPONENT_HEALTH,
     maxComponentHp:MOTHERSHIP_COMPONENT_HEALTH,
-    phrase:Math.floor(Math.random()*3),
+    phrase:opts.phrase===undefined?Math.floor(Math.random()*3):opts.phrase,
     lastDrainNotice:0,
     spawnedAt:performance.now(),
   };
   state.screenShake=Math.max(state.screenShake||0,12);
-  notify('⚠ Massive Signature Detected', 'var(--red)');
+  notify(opts.notice||'⚠ Massive Signature Detected', 'var(--red)');
 }
 
 function dismissMothership(message='Leviathan jump signature fading.'){
@@ -2958,12 +2992,24 @@ function startMothershipCombat(message){
   notify(message,'var(--red)');
 }
 
+function mothershipDrawAngle(m){
+  return (m.angle||0)+Math.sin((state&&state.tick||0)*0.006)*0.025;
+}
+
+function mothershipLocalPoint(m,x,y){
+  const a=mothershipDrawAngle(m);
+  const ca=Math.cos(a),sa=Math.sin(a);
+  return {x:m.x+x*ca-y*sa,y:m.y+x*sa+y*ca};
+}
+
 function mothershipComponents(){
   const m=state&&state.mothership;
   if(!m)return [];
+  const engines=mothershipLocalPoint(m,-78,0);
+  const hangar=mothershipLocalPoint(m,72,0);
   return [
-    {key:'enginesHp',label:'ENGINES',x:m.x-58,y:m.y+30,r:30},
-    {key:'hangarHp',label:'HANGAR',x:m.x+48,y:m.y-8,r:34},
+    {key:'enginesHp',label:'ENGINES',x:engines.x,y:engines.y,r:34},
+    {key:'hangarHp',label:'HANGAR',x:hangar.x,y:hangar.y,r:36},
   ];
 }
 
@@ -3444,6 +3490,23 @@ function triggerBlackFlash(target,kind){
   notify('BLACK FLASH — Divergent Ram!', '#ff2d55');
 }
 
+function markBlackFlashWitnesses(destroyed){
+  if(!state||!destroyed||state.mothership)return;
+  const now=performance.now();
+  let witnesses=0;
+  for(const e of (state.enemies||[])){
+    if(!e||e===destroyed||e.hp<=0||e._mothershipRevengeAt)continue;
+    if(Math.hypot(e.x-destroyed.x,e.y-destroyed.y)>BLACK_FLASH_WITNESS_RANGE)continue;
+    e._mothershipRevengeAt=now+BLACK_FLASH_REVENGE_DELAY;
+    e._mothershipRevengeFor=destroyed.id||'raider';
+    e.state='attack';
+    witnesses++;
+  }
+  if(witnesses>0){
+    notify('⚠ Raider witness transmitting vengeance signal...', 'var(--red)');
+  }
+}
+
 function resolveRamTarget(target,kind){
   if(!target||target.hp<=0)return;
   const s=state.ship;
@@ -3461,6 +3524,7 @@ function resolveRamTarget(target,kind){
     s.vy=ny*Math.max(2.5,speed*0.42);
     if(target.hp<=0&&!target._bountyPaid){
       target._bountyPaid=true;
+      if(kind==='enemy')markBlackFlashWitnesses(target);
       state.credits+=kind==='enemy'?40:30;
       state.raidersDestroyedSession=(state.raidersDestroyedSession||0)+1;
       notify(`BLACK FLASH vaporized ${kind==='enemy'?'enemy':'escort raider'}! +${kind==='enemy'?40:30}¢`, '#ff2d55');
@@ -3499,6 +3563,20 @@ function updateEnemies(dt, now){
   state.enemies = (state.enemies||[]).filter(e => e.hp > 0);
 
   for(const e of state.enemies){
+    if(e._mothershipRevengeAt&&now>=e._mothershipRevengeAt){
+      e._mothershipRevengeAt=0;
+      if(!state.mothership){
+        spawnMothership({
+          mode:'combat',
+          phrase:2,
+          notice:'⚠ Leviathan vengeance jump detected',
+        });
+        if(state.mothership){
+          notify('Mothership: "Raider distress confirmed. Retaliation authorized."', 'var(--red)');
+        }
+      }
+    }
+
     // ── Decide behaviour ─────────────────────────────────────────
     // Ships only attack if they are already in 'retaliate' state (player attacked first
     // or player tried to steal from an enemy planet).
@@ -4594,22 +4672,55 @@ function drawMothership(ctx,tick){
   if(!m||!m.active)return;
   ctx.save();
   ctx.translate(m.x,m.y);
-  ctx.rotate(Math.sin(tick*0.006)*0.025);
+  ctx.rotate(mothershipDrawAngle(m));
   const pulse=0.5+0.5*Math.sin(tick*0.05);
-  const aura=ctx.createRadialGradient(0,0,20,0,0,170);
+  const aura=ctx.createRadialGradient(0,0,20,0,0,185);
   aura.addColorStop(0,`rgba(255,45,85,${0.12+0.08*pulse})`);
   aura.addColorStop(1,'transparent');
-  ctx.beginPath();ctx.arc(0,0,170,0,Math.PI*2);ctx.fillStyle=aura;ctx.fill();
+  ctx.beginPath();ctx.arc(0,0,185,0,Math.PI*2);ctx.fillStyle=aura;ctx.fill();
+
+  // Oversized player-ship silhouette: pointed command bow, swept wings, broad engine stern.
   ctx.beginPath();
-  ctx.moveTo(0,-86);ctx.lineTo(86,-36);ctx.lineTo(112,10);ctx.lineTo(64,70);
-  ctx.lineTo(0,92);ctx.lineTo(-64,70);ctx.lineTo(-112,10);ctx.lineTo(-86,-36);
+  ctx.moveTo(142,0);
+  ctx.lineTo(54,-34);
+  ctx.lineTo(10,-58);
+  ctx.lineTo(-70,-52);
+  ctx.lineTo(-122,-34);
+  ctx.lineTo(-92,-12);
+  ctx.lineTo(-118,0);
+  ctx.lineTo(-92,12);
+  ctx.lineTo(-122,34);
+  ctx.lineTo(-70,52);
+  ctx.lineTo(10,58);
+  ctx.lineTo(54,34);
   ctx.closePath();
   ctx.fillStyle='#12040a';ctx.strokeStyle=m.mode==='combat'?'#ff2d55':'#9b4dff';ctx.lineWidth=3;
   ctx.fill();ctx.stroke();
-  ctx.beginPath();ctx.ellipse(0,-10,44,26,0,0,Math.PI*2);
+
+  ctx.beginPath();
+  ctx.moveTo(118,0);ctx.lineTo(58,-16);ctx.lineTo(40,0);ctx.lineTo(58,16);
+  ctx.closePath();
+  ctx.fillStyle='rgba(155,77,255,0.14)';ctx.strokeStyle='rgba(255,45,85,0.75)';ctx.lineWidth=1.6;
+  ctx.fill();ctx.stroke();
+
+  ctx.beginPath();ctx.ellipse(24,0,42,18,0,0,Math.PI*2);
   ctx.fillStyle='rgba(0,0,0,0.72)';ctx.strokeStyle='rgba(255,45,85,0.8)';ctx.lineWidth=2;ctx.fill();ctx.stroke();
-  ctx.beginPath();ctx.rect(-82,22,48,32);ctx.rect(28,-28,58,42);
+
+  ctx.beginPath();ctx.rect(48,-22,46,44);
   ctx.fillStyle='rgba(255,45,85,0.16)';ctx.strokeStyle='rgba(255,45,85,0.68)';ctx.lineWidth=1.5;ctx.fill();ctx.stroke();
+  ctx.beginPath();ctx.moveTo(62,-12);ctx.lineTo(88,0);ctx.lineTo(62,12);ctx.closePath();
+  ctx.fillStyle='rgba(0,0,0,0.48)';ctx.fill();ctx.stroke();
+
+  ctx.beginPath();ctx.rect(-108,-30,42,22);ctx.rect(-108,8,42,22);ctx.rect(-118,-7,54,14);
+  ctx.fillStyle='rgba(255,45,85,0.16)';ctx.strokeStyle='rgba(255,45,85,0.68)';ctx.lineWidth=1.5;ctx.fill();ctx.stroke();
+
+  for(const ey of [-24,0,24]){
+    const flame=ctx.createLinearGradient(-126,ey,-160,ey);
+    flame.addColorStop(0,`rgba(255,107,53,${0.74+0.18*pulse})`);
+    flame.addColorStop(1,'transparent');
+    ctx.beginPath();ctx.moveTo(-118,ey-7);ctx.lineTo(-158-10*pulse,ey);ctx.lineTo(-118,ey+7);ctx.closePath();
+    ctx.fillStyle=flame;ctx.fill();
+  }
   ctx.restore();
 
   for(const comp of mothershipComponents()){
