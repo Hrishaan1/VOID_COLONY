@@ -33,6 +33,12 @@ In **VOID COLONY**, you command a lone colony ship in a dynamic solar system. Ba
 * **Layered Rendering:** Uses dual HTML5 Canvases to handle high-frequency physics updates and background star-fields separately.
 
 ## Patch Notes
+- **v1.13 - Advanced Weapon Systems**
+    - Added Gravity Well Launcher, Kinetic Flak Cannon, Solar Beam Overdrive, and Overcharged Shield Burst
+    - Gravity wells pull nearby raiders into a temporary trap for easier Divergent Ram setups
+    - Kinetic Flak Cannon fires short-range shrapnel with heavy knockback and unlocks after 3 active farms
+    - Solar Beam Overdrive channels scaling damage while consuming food and locking ship movement
+    - Overcharged Shield Burst clears enemy projectiles and disables nearby raider engines as a panic button
 - **v1.12 - Leviathan Diplomacy**
     - Massive hostile Motherships can warp in an siphon nearby colony resources
     - added negotiation choices using Credits, Food, raider kills, or Laboratory Modules

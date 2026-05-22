@@ -98,7 +98,9 @@
   .btn-colonize:disabled{opacity:0.3;cursor:not-allowed;}
   .btn-close{width:100%;padding:6px;background:none;border:1px solid var(--border);color:var(--text);font-family:'Share Tech Mono',monospace;font-size:10px;cursor:pointer;transition:all 0.2s;}
   .btn-close:hover{border-color:var(--red);color:var(--red);}
-  #notif{position:absolute;top:70px;left:50%;transform:translateX(-50%);background:rgba(7,13,20,0.95);border:1px solid var(--accent2);padding:8px 20px;font-size:11px;color:var(--accent2);letter-spacing:1px;z-index:30;pointer-events:none;opacity:0;transition:opacity 0.3s;white-space:nowrap;}
+  #notif-stack{position:absolute;top:70px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:6px;z-index:30;pointer-events:none;}
+  .notif{background:rgba(7,13,20,0.95);border:1px solid var(--accent2);padding:8px 20px;font-size:11px;color:var(--accent2);letter-spacing:1px;opacity:0;transform:translateY(-6px);transition:opacity 0.3s,transform 0.3s;white-space:nowrap;}
+  .notif.show{opacity:1;transform:translateY(0);}
   #title-screen{position:absolute;inset:0;background:rgba(2,4,8,0.97);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100;gap:16px;}
   #title-screen h1{font-family:'Orbitron',monospace;font-size:clamp(28px,5vw,52px);font-weight:900;color:var(--accent);letter-spacing:8px;text-shadow:0 0 40px rgba(0,212,255,0.5);}
   #title-screen .sub{font-size:12px;letter-spacing:4px;color:var(--text);text-transform:uppercase;margin-top:-8px;}
@@ -210,7 +212,8 @@
   .research-btn:disabled{opacity:0.3;cursor:not-allowed;background:none;color:var(--text);border-color:var(--border);}
   #research-screen .overlay-box{max-height:76vh;overflow:auto;}
   /* Space station weapon shop */
-  .weapon-grid{display:grid;grid-template-columns:1fr;gap:8px;margin-top:10px;}
+  #station-screen .overlay-box{max-height:calc(100vh - 130px);overflow:hidden;}
+  .weapon-grid{display:grid;grid-template-columns:1fr;gap:8px;margin-top:10px;max-height:416px;overflow-y:auto;padding-right:4px;overscroll-behavior:contain;}
   .weapon-card{border:1px solid var(--border);background:rgba(255,255,255,0.03);padding:10px;}
   .weapon-card.active{border-color:var(--accent);background:rgba(0,212,255,0.06);}
   .weapon-head{display:flex;justify-content:space-between;gap:10px;margin-bottom:5px;}
@@ -266,9 +269,11 @@
     .tech-tree{min-width:unset;}
     .tech-tier,.tech-tier.tier-0,.tech-tier.tier-1{grid-template-columns:1fr;}
     .tech-tier::before{left:50%;right:auto;top:-18px;height:18px;border-top:none;border-left:1px solid rgba(0,212,255,0.28);}
+    .weapon-grid{max-height:min(416px,52vh);}
     .controls-box{min-width:unset;width:90vw;padding:12px 16px;}
     #title-screen h1{letter-spacing:4px;}
-    #notif{font-size:10px;padding:6px 14px;white-space:normal;text-align:center;max-width:80vw;}
+    #notif-stack{width:80vw;}
+    .notif{font-size:10px;padding:6px 14px;white-space:normal;text-align:center;max-width:100%;}
   }
 </style>
 </head>
@@ -331,6 +336,7 @@
       <div class="map-legend-item"><div class="map-legend-dot" style="background:#39ff14"></div>Moon (colonized)</div>
       <div class="map-legend-item"><div class="map-legend-dot" style="background:#fff"></div>Ship</div>
       <div class="map-legend-item"><div class="map-legend-dot" style="background:#ffd700"></div>Freighter</div>
+      <div class="map-legend-item"><div class="map-legend-dot" style="background:#ffd700"></div>Escort</div>
       <div class="map-legend-item"><div class="map-legend-dot" style="background:#ff2d55"></div>Raider</div>
       <span style="margin-left:auto;color:var(--accent);font-size:9px">DRAG TO MOVE · SCROLL TO ZOOM</span>
     </div>
@@ -384,7 +390,7 @@
     <button class="btn-close" id="btn-close-panel">[ ESC ] Close</button>
   </div>
 
-  <div id="notif"></div>
+  <div id="notif-stack"></div>
 
   <!-- SPACE STATION WEAPON SHOP -->
   <div class="overlay-screen" id="station-screen">
@@ -407,6 +413,7 @@
       <button class="overlay-btn accent" onclick="togglePause()">▶ RESUME</button>
       <button class="overlay-btn" onclick="openMarket()">📈 FOOD MARKET</button>
       <button class="overlay-btn" onclick="openTradeRoutes()">▣ TRADE ROUTES</button>
+      <button class="overlay-btn" onclick="openEscortCraft()">◈ ESCORT CRAFT</button>
       <button class="overlay-btn" onclick="openBonds()">📊 SOLAR BONDS</button>
       <button class="overlay-btn" onclick="openResearch()">🔬 LABORATORY</button>
       <button class="overlay-btn" id="system-travel-btn" onclick="openGalaxyMap()">✦ GALAXY STARMAP</button>
@@ -451,6 +458,23 @@
       <div class="trade-grid" id="trade-grid"></div>
     </div>
     <button class="overlay-btn" style="max-width:200px" onclick="closeTradeRoutes()">[ ESC ] CLOSE</button>
+  </div>
+
+  <!-- ESCORT CRAFT SCREEN -->
+  <div class="overlay-screen" id="escort-screen">
+    <div class="overlay-title">ESCORT CRAFT</div>
+    <div class="overlay-box" style="min-width:min(480px,92vw)">
+      <div style="font-size:10px;color:var(--text);line-height:1.6">
+        Buy defensive escorts and assign them to freighters. Multiple escorts can protect the same freighter.
+        <span style="color:var(--yellow)">Reserves: <span id="escort-reserves">0¢</span></span>
+      </div>
+      <div class="trade-actions">
+        <button class="trade-btn" id="buy-escort-btn" onclick="buyEscortCraft()">BUY ESCORT</button>
+      </div>
+      <div id="escort-msg" style="font-size:10px;text-align:center;margin-top:8px;min-height:14px;color:var(--yellow)"></div>
+      <div class="trade-grid" id="escort-grid"></div>
+    </div>
+    <button class="overlay-btn" style="max-width:200px" onclick="closeEscortCraft()">[ ESC ] CLOSE</button>
   </div>
 
   <!-- MARKET SCREEN -->
@@ -525,6 +549,16 @@
     <div class="overlay-title">PATCH NOTES</div>
     <div class="overlay-box">
       <div class="patch-scroll">
+        <div class="patch-entry">
+          <div class="patch-version">v1.13 — Advanced Weapon Systems</div>
+          <ul class="patch-list">
+            <li>Added Gravity Well Launcher, Kinetic Flak Cannon, Solar Beam Overdrive, and Overcharged Shield Burst</li>
+            <li>Gravity wells pull nearby raiders into a temporary trap for easier Divergent Ram setups</li>
+            <li>Kinetic Flak Cannon fires short-range shrapnel with heavy knockback and unlocks after 3 active farms</li>
+            <li>Solar Beam Overdrive channels scaling damage while consuming food and locking ship movement</li>
+            <li>Overcharged Shield Burst clears enemy projectiles and disables nearby raider engines as a panic button</li>
+          </ul>
+        </div>
         <div class="patch-entry">
           <div class="patch-version">v1.12.1 — Leviathan Ship Remodel</div>
           <ul class="patch-list">
@@ -767,7 +801,7 @@
       <div><span class="key">S/↓</span> — Brake</div>
       <div><span class="key">E</span> — Interact with nearby planet/moon</div>
       <div><span class="key">M</span> — Toggle solar system map</div>
-      <div><span class="key">SPACE</span> — Fire laser</div>
+      <div><span class="key">SPACE</span> — Fire equipped weapon (hold for beam)</div>
       <div><span class="key">C</span> — Toggle mouse aim (click to fire)</div>
     </div>
     <div class="controls-box" id="controls-box-touch" style="display:none">
@@ -831,6 +865,18 @@ const ENEMY_AGGRO_RANGE = 500;    // px — distance at which enemy targets play
 const RECLAIM_COST      = 80;     // credits to reclaim a taken-over planet
 const STATION_DOCK_RANGE = 110;
 const RAILGUN_FUEL_COST = 2.5;
+const GRAVITY_WELL_FUEL_COST = 4;
+const GRAVITY_WELL_PULL = 0.34;
+const GRAVITY_WELL_RADIUS = 230;
+const GRAVITY_WELL_DURATION = 3600;
+const FLAK_PELLETS = 9;
+const FLAK_RANGE = 190;
+const FLAK_KNOCKBACK = 4.8;
+const SOLAR_BEAM_FOOD_PER_SEC = 2;
+const SOLAR_BEAM_BASE_DPS = 18;
+const SOLAR_BEAM_MAX_DPS = 92;
+const SHIELD_BURST_RADIUS = 260;
+const SHIELD_BURST_DISABLE = 3000;
 const VOID_EVENT_INTERVAL = 70000;
 const SOLAR_FLARE_DURATION = 18000;
 const COMET_DOCK_RANGE = 46;
@@ -846,6 +892,11 @@ const TRADE_RAID_INTERVAL = 90000;
 const TRADE_RAIDER_HEALTH = 45;
 const TRADE_RAIDER_SPEED = 0.13;
 const ESCORT_WARP_FUEL = 8;
+const ESCORT_CRAFT_COST = 300;
+const ESCORT_CRAFT_HEALTH = 55;
+const ESCORT_CRAFT_SPEED = 0.16;
+const ESCORT_CRAFT_LASER_CD = 720;
+const ESCORT_CRAFT_DAMAGE = 14;
 const DIVERGENT_RAM_SPEED = 6.1;
 const DIVERGENT_RAM_FUEL_COST = -10;
 const DIVERGENT_RAM_DAMAGE = 180;
@@ -890,6 +941,14 @@ const WEAPON_DEFS=[
    desc:'Short-range expanding wave. Damages every raider caught in the blast.'},
   {id:'railgun',name:'Railgun',cost:240,cooldown:620,damage:58,speed:16,life:150,fuelCost:RAILGUN_FUEL_COST,
    desc:'Long-range heavy slug. High damage, but each shot consumes fuel.'},
+  {id:'gravity',name:'Gravity Well Launcher',cost:300,cooldown:1100,damage:0,speed:8,life:95,fuelCost:GRAVITY_WELL_FUEL_COST,
+   desc:'Fires a heavy matrix shell that blooms into a mini singularity, dragging raiders into a ram-friendly knot.'},
+  {id:'flak',name:'Kinetic Flak Cannon',cost:300,cooldown:640,damage:18,requiresFarms:3,
+   desc:'Short-range cone of shrapnel. Devastating up close, with heavy knockback for raiders near your colonies.'},
+  {id:'solar',name:'Solar Beam Overdrive',cost:360,cooldown:120,damage:SOLAR_BEAM_BASE_DPS,foodPerSec:SOLAR_BEAM_FOOD_PER_SEC,
+   desc:'Hold fire to channel a scaling beam onto one target. Thrusters lock while the reactor eats food.'},
+  {id:'shieldburst',name:'Overcharged Shield Burst',cost:320,cooldown:1400,damage:0,
+   desc:'Emergency shockwave. Burns shield or hull energy to clear projectiles and disable nearby raider engines.'},
 ];
 
 // ===== SOLAR SYSTEM GENERATION =====
@@ -1049,7 +1108,13 @@ function defaultState(){
     purchasedWeapons:{laser:true},
     enemies:[],
     freighters:[],
+    escorts:[],
+    escortLasers:[],
     tradeRaiders:[],
+    gravityWells:[],
+    shockwaves:[],
+    flakBursts:[],
+    solarBeam:null,
     tradeRaidTimer:30000,
     mothership:null,
     mothershipTimer:70000,
@@ -1156,7 +1221,14 @@ function normalizeState(s){
   if(!Array.isArray(s.activeVoidEvents))s.activeVoidEvents=[];
   if(s.wormholeCooldown===undefined)s.wormholeCooldown=0;
   if(!Array.isArray(s.freighters))s.freighters=[];
+  if(!Array.isArray(s.escorts))s.escorts=[];
+  if(!Array.isArray(s.escortLasers))s.escortLasers=[];
   if(!Array.isArray(s.tradeRaiders))s.tradeRaiders=[];
+  if(!Array.isArray(s.gravityWells))s.gravityWells=[];
+  if(!Array.isArray(s.shockwaves))s.shockwaves=[];
+  if(!Array.isArray(s.flakBursts))s.flakBursts=[];
+  s.solarBeam=null;
+  s.fireHeld=false;
   if(s.tradeRaidTimer===undefined)s.tradeRaidTimer=45000;
   if(s.mothershipTimer===undefined)s.mothershipTimer=70000;
   if(s.mothership===undefined)s.mothership=null;
@@ -1174,6 +1246,13 @@ function normalizeState(s){
     if(f.cargo===undefined)f.cargo=0;
     if(!f.mode)f.mode='to_colony';
     if(f.preferredTargetBodyId===undefined)f.preferredTargetBodyId=null;
+  });
+  s.escorts.forEach(e=>{
+    if(e.id===undefined)e.id=idstr();
+    if(e.hp===undefined)e.hp=ESCORT_CRAFT_HEALTH;
+    if(e.maxHp===undefined)e.maxHp=ESCORT_CRAFT_HEALTH;
+    if(e.assignedFreighterId===undefined)e.assignedFreighterId=null;
+    if(e.lastShot===undefined)e.lastShot=0;
   });
   if(!s.systems||!Array.isArray(s.systems)||!s.systems.length){
     s.currentSystemIndex=0;
@@ -1260,10 +1339,12 @@ function countBuiltModules(types=['farm','fuel','lab']){
   if(!state)return 0;
   let count=0;
   for(const b of[...state.planets,...state.moons]){
+    if(!b.colonized||b.enemyOwned)continue;
     for(const sl of b.slots)if(types.includes(sl))count++;
   }
   return count;
 }
+function countActiveFarms(){return countBuiltModules(['farm']);}
 function getStationPos(){return {x:0,y:-(state&&state.star?state.star.radius:58)-120};}
 function getTradeHubPos(){return getStationPos();}
 function bodyPos(body){return body&&body.isMoon?getMoonPos(body):{x:body?body.x:0,y:body?body.y:0};}
@@ -1360,12 +1441,21 @@ function enterSystem(idx,arrivalLabel){
   state.camera.y=state.ship.y;
   state.enemies=[];
   state.tradeRaiders=[];
+  state.escortLasers=[];
+  state.gravityWells=[];
+  state.shockwaves=[];
+  state.flakBursts=[];
+  state.solarBeam=null;
   state.mothership=null;
   state.mothershipTimer=65000;
   const hub=getTradeHubPos();
   for(const f of (state.freighters||[])){
     f.x=hub.x+rnd(-28,28);f.y=hub.y+rnd(-28,28);
     f.vx=0;f.vy=0;f.mode='to_colony';f.targetBodyId=null;f.cargo=0;f.underAttack=false;
+  }
+  for(const e of (state.escorts||[])){
+    e.x=hub.x+rnd(-36,36);e.y=hub.y+rnd(-36,36);
+    e.vx=0;e.vy=0;e.hp=e.maxHp||ESCORT_CRAFT_HEALTH;
   }
   state.playerLasers=[];
   state.enemyLasers=[];
@@ -1430,9 +1520,13 @@ window.addEventListener('mousemove', e=>{
 // Left-click fires in mouse mode
 window.addEventListener('mousedown', e=>{
   if(e.button===0 && mouseAimMode && gameRunning && !gameOver && !gamePaused
-     && !e.target.closest('#planet-panel,#map-overlay,#hud,#pause-screen,#market-screen,#bonds-screen,#research-screen,#station-screen,#mothership-screen,#rewind-screen,#savecode-screen,#patchnotes-screen')){
+     && !e.target.closest('#planet-panel,#map-overlay,#hud,#pause-screen,#market-screen,#bonds-screen,#research-screen,#station-screen,#escort-screen,#mothership-screen,#rewind-screen,#savecode-screen,#patchnotes-screen')){
+    if(state)state.fireHeld=true;
     fireLaser();
   }
+});
+window.addEventListener('mouseup', e=>{
+  if(e.button===0&&state)state.fireHeld=false;
 });
 
 function toggleMouseAim(){
@@ -1452,10 +1546,10 @@ window.addEventListener('keydown',e=>{
   else keys[e.key]=true;
   if((e.key==='m'||e.key==='M')&&gameRunning&&!gameOver)toggleMap();
   if((e.key==='c'||e.key==='C')&&gameRunning&&!gameOver&&!gamePaused) toggleMouseAim();
-  if((e.code==='Space'||e.key===' ')&&gameRunning&&!gameOver&&!gamePaused){ e.preventDefault(); fireLaser(); }
+  if((e.code==='Space'||e.key===' ')&&gameRunning&&!gameOver&&!gamePaused){ e.preventDefault(); state.fireHeld=true; fireLaser(); }
 });
 window.addEventListener('keyup',e=>{
-  if(e.code==='Space'||e.key===' ') keys[' ']=false;
+  if(e.code==='Space'||e.key===' '){ keys[' ']=false; if(state)state.fireHeld=false; }
   else keys[e.key]=false;
 });
 
@@ -1525,9 +1619,13 @@ function enableTouchControls(){
   );
 
   document.getElementById('btn-fire').addEventListener('touchstart',e=>{
-    e.preventDefault(); fireLaser();
+    e.preventDefault(); if(state)state.fireHeld=true; fireLaser();
   },{passive:false});
-  document.getElementById('btn-fire').addEventListener('click',()=>fireLaser());
+  document.getElementById('btn-fire').addEventListener('touchend',e=>{
+    e.preventDefault(); if(state)state.fireHeld=false;
+  },{passive:false});
+  document.getElementById('btn-fire').addEventListener('mousedown',()=>{if(state)state.fireHeld=true;fireLaser();});
+  document.getElementById('btn-fire').addEventListener('mouseup',()=>{if(state)state.fireHeld=false;});
 
   document.getElementById('btn-interact').addEventListener('touchstart',e=>{
     e.preventDefault();
@@ -1623,14 +1721,19 @@ const panelInfo=document.getElementById('panel-planet-info');
 const panelSlots=document.getElementById('panel-slots');
 const btnColonize=document.getElementById('btn-colonize');
 const btnClosePanel=document.getElementById('btn-close-panel');
-const notifEl=document.getElementById('notif');
-
-let notifTimer=null;
+const notifStack=document.getElementById('notif-stack');
 function notify(msg,color='var(--accent2)'){
-  notifEl.textContent=msg;notifEl.style.borderColor=color;notifEl.style.color=color;
-  notifEl.style.opacity='1';
-  if(notifTimer)clearTimeout(notifTimer);
-  notifTimer=setTimeout(()=>{notifEl.style.opacity='0';},2400);
+  const el=document.createElement('div');
+  el.className='notif';
+  el.textContent=msg;
+  el.style.borderColor=color;
+  el.style.color=color;
+  notifStack.appendChild(el);
+  requestAnimationFrame(()=>el.classList.add('show'));
+  setTimeout(()=>{
+    el.classList.remove('show');
+    setTimeout(()=>el.remove(),320);
+  },2400);
 }
 
 function getMoonPos(moon){
@@ -1673,6 +1776,25 @@ function openPlanetPanel(body,type){
   reclaimBtn.textContent=`⚔ Reclaim Planet (${systemCost(RECLAIM_COST)}¢)`;
   reclaimBtn.style.display=body.enemyOwned?'block':'none';
   reclaimBtn.onclick=()=>reclaimPlanet(body.id);
+
+  let flakBtn=document.getElementById('btn-colony-flak');
+  if(!flakBtn){
+    flakBtn=document.createElement('button');
+    flakBtn.id='btn-colony-flak';flakBtn.className='btn-colonize';
+    flakBtn.style.borderColor='var(--yellow)';flakBtn.style.color='var(--yellow)';
+    flakBtn.style.marginBottom='6px';
+    document.getElementById('planet-panel').insertBefore(flakBtn,
+      document.getElementById('btn-colonize'));
+  }
+  const flakDef=getWeaponDef('flak');
+  const flakOwned=!!(state.purchasedWeapons&&state.purchasedWeapons.flak);
+  const flakActive=state.activeWeapon==='flak';
+  const farms=countActiveFarms();
+  flakBtn.textContent=flakActive?'Kinetic Flak Equipped':flakOwned?'Equip Kinetic Flak Cannon':`Buy Kinetic Flak Cannon (${flakDef.cost}¢)`;
+  flakBtn.disabled=flakActive||(!flakOwned&&(farms<flakDef.requiresFarms||state.credits<flakDef.cost));
+  flakBtn.title=farms<flakDef.requiresFarms?`Requires ${flakDef.requiresFarms} active farms. Current: ${farms}`:'';
+  flakBtn.style.display=body.colonized&&!body.enemyOwned?'block':'none';
+  flakBtn.onclick=()=>buyOrEquipWeapon('flak');
 
   const moonsSection=document.getElementById('panel-moons-section');
   const moonsList=document.getElementById('panel-moons-list');
@@ -1902,6 +2024,7 @@ function updateHUD(){
   // keep market UI live if open
   if(document.getElementById('market-screen').classList.contains('open')) updateMarketUI();
   if(document.getElementById('trade-screen').classList.contains('open')) updateTradeUI();
+  if(document.getElementById('escort-screen').classList.contains('open')) updateEscortUI();
   if(document.getElementById('bonds-screen').classList.contains('open')) updateBondsUI();
   if(document.getElementById('research-screen').classList.contains('open')) updateResearchUI();
   const maxHull=getMaxHull();
@@ -2168,6 +2291,18 @@ function drawMap(){
     mapCtx.fillStyle=f.underAttack?'rgba(255,45,85,0.9)':'rgba(255,215,0,0.85)';
     mapCtx.font='8px "Share Tech Mono"';mapCtx.textAlign='center';
     mapCtx.fillText(f.underAttack?'SOS':'FR',fx,fy+18);
+  }
+
+  for(const e of (state.escorts||[])){
+    if(!e||e.hp<=0)continue;
+    const ex=wx(e.x), ey=wy(e.y);
+    const assigned=(state.freighters||[]).some(f=>f.id===e.assignedFreighterId);
+    mapCtx.save();mapCtx.translate(ex,ey);mapCtx.rotate(e.angle||0);
+    mapCtx.beginPath();mapCtx.moveTo(7,0);mapCtx.lineTo(-5,-4);mapCtx.lineTo(-3,0);mapCtx.lineTo(-5,4);mapCtx.closePath();
+    mapCtx.fillStyle=assigned?'rgba(255,215,0,0.95)':'rgba(160,140,84,0.78)';
+    mapCtx.strokeStyle='rgba(255,255,255,0.72)';mapCtx.lineWidth=0.7;
+    mapCtx.fill();mapCtx.stroke();
+    mapCtx.restore();
   }
 
   for(const e of (state.enemies||[])){
@@ -2459,6 +2594,7 @@ window.confirmQuit = function(){
     document.getElementById('research-screen').classList.remove('open');
     document.getElementById('station-screen').classList.remove('open');
     document.getElementById('trade-screen').classList.remove('open');
+    document.getElementById('escort-screen').classList.remove('open');
     document.getElementById('title-screen').style.display = 'flex';
     document.getElementById('pause-btn').textContent = '⏸ PAUSE';
   }
@@ -2624,16 +2760,20 @@ function updateStationUI(){
   for(const def of WEAPON_DEFS){
     const owned=!!state.purchasedWeapons[def.id];
     const active=state.activeWeapon===def.id;
-    const canBuy=state.credits>=def.cost;
+    const reqOk=!def.requiresFarms||countActiveFarms()>=def.requiresFarms;
+    const canBuy=state.credits>=def.cost&&reqOk;
     const card=document.createElement('div');
     card.className='weapon-card'+(active?' active':'');
-    const tag=active?'EQUIPPED':owned?'OWNED':`${def.cost}¢`;
+    const tag=active?'EQUIPPED':owned?'OWNED':reqOk?`${def.cost}¢`:`${def.requiresFarms} FARMS`;
     const fuel=def.fuelCost?` · ${def.fuelCost} fuel/shot`:'';
+    const food=def.foodPerSec?` · ${def.foodPerSec} food/s while held`:'';
+    const req=def.requiresFarms?`<br>Requires: ${def.requiresFarms} active farms (${countActiveFarms()} ready)`: '';
+    const dmg=def.id==='gravity'?'gravity trap':def.id==='shieldburst'?'engine disable':def.id==='solar'?`${SOLAR_BEAM_BASE_DPS}-${SOLAR_BEAM_MAX_DPS}/s`:`${getWeaponDamage(def.id)}`;
     card.innerHTML=`<div class="weapon-head">
         <div class="weapon-name">${def.name}</div>
         <div class="weapon-tag">${tag}</div>
       </div>
-      <div class="weapon-desc">${def.desc}<br>Damage: ${getWeaponDamage(def.id)} · Cooldown: ${Math.round(getWeaponCooldown(def.id))}ms${fuel}</div>
+      <div class="weapon-desc">${def.desc}${req}<br>Damage: ${dmg} · Cooldown: ${Math.round(getWeaponCooldown(def.id))}ms${fuel}${food}</div>
       <button class="weapon-btn" ${active||(!owned&&!canBuy)?'disabled':''}>${active?'Equipped':owned?'Equip':'Buy & Equip'}</button>`;
     card.querySelector('button').addEventListener('click',()=>buyOrEquipWeapon(def.id));
     grid.appendChild(card);
@@ -2645,8 +2785,14 @@ window.buyOrEquipWeapon = function(id){
   const def=getWeaponDef(id);
   if(!state.purchasedWeapons)state.purchasedWeapons={laser:true};
   if(!state.purchasedWeapons[id]){
+    if(def.requiresFarms&&countActiveFarms()<def.requiresFarms){
+      stationMsg(`${def.name} needs ${def.requiresFarms} active farms first.`,'var(--red)');
+      notify(`${def.name} needs ${def.requiresFarms} active farms first.`,'var(--red)');
+      return;
+    }
     if(state.credits<def.cost){
       stationMsg(`Need ${def.cost}¢ for ${def.name}.`,'var(--red)');
+      notify(`Need ${def.cost}¢ for ${def.name}.`,'var(--red)');
       return;
     }
     state.credits-=def.cost;
@@ -2654,6 +2800,8 @@ window.buyOrEquipWeapon = function(id){
   }
   state.activeWeapon=id;
   stationMsg(`${def.name} equipped.`,'var(--green)');
+  notify(`${def.name} equipped.`,'var(--green)');
+  if(activePlanet)openPlanetPanel(activePlanet,activePlanetType||'planet');
   updateStationUI();updateHUD();saveState();
 };
 
@@ -2666,8 +2814,22 @@ window.closeTradeRoutes = function(){
   document.getElementById('trade-screen').classList.remove('open');
 };
 
+window.openEscortCraft = function(){
+  if(!state)return;
+  updateEscortUI();
+  document.getElementById('escort-screen').classList.add('open');
+};
+window.closeEscortCraft = function(){
+  document.getElementById('escort-screen').classList.remove('open');
+};
+
 function tradeMsg(msg,color='var(--yellow)'){
   const el=document.getElementById('trade-msg');
+  el.textContent=msg;el.style.color=color;
+}
+
+function escortMsg(msg,color='var(--yellow)'){
+  const el=document.getElementById('escort-msg');
   el.textContent=msg;el.style.color=color;
 }
 
@@ -2700,6 +2862,7 @@ function updateTradeUI(){
     const card=document.createElement('div');
     card.className='trade-card'+(f.underAttack?' alert':'');
     const hpPct=Math.max(0,Math.round((f.hp/(f.maxHp||FREIGHTER_HEALTH))*100));
+    const escortCount=escortAssignedToFreighter(f.id).length;
     card.innerHTML=`<div class="trade-head">
         <div class="trade-name">Freighter ${i+1}</div>
         <div class="trade-tag">${hpPct}% HULL</div>
@@ -2708,7 +2871,7 @@ function updateTradeUI(){
         Route: ${target?target.name:'Seeking farm colony'} ↔ Central Hub<br>
         Assigned: ${assigned&&eligible.includes(assigned)?assigned.name:'Auto'}<br>
         Status: <span style="color:${f.underAttack?'var(--red)':'var(--text-bright)'}">${freighterStatusLabel(f)}</span><br>
-        Cargo: ${Math.ceil(f.cargo||0)} / ${FREIGHTER_CAPACITY} food · Earned: ${Math.floor(f.earned||0)}¢
+        Escorts: ${escortCount} · Cargo: ${Math.ceil(f.cargo||0)} / ${FREIGHTER_CAPACITY} food · Earned: ${Math.floor(f.earned||0)}¢
       </div>`;
     const select=document.createElement('select');
     select.className='trade-route-select';
@@ -2721,6 +2884,61 @@ function updateTradeUI(){
       select.appendChild(opt);
     });
     select.addEventListener('change',()=>assignFreighterRoute(f.id,select.value));
+    card.appendChild(select);
+    grid.appendChild(card);
+  });
+}
+
+function escortStatusLabel(e){
+  const f=(state.freighters||[]).find(fr=>fr.id===e.assignedFreighterId);
+  if(!f)return e.assignedFreighterId?'Assignment lost':'Unassigned';
+  const threat=(state.tradeRaiders||[]).filter(r=>r.hp>0&&r.targetFreighterId===f.id).length;
+  if(threat)return `Defending ${f.name||'freighter'} against ${threat} raider${threat>1?'s':''}`;
+  return `Guarding ${f.name||'freighter'}`;
+}
+
+function updateEscortUI(){
+  if(!state)return;
+  const escorts=state.escorts||[];
+  const freighters=state.freighters||[];
+  document.getElementById('escort-reserves').textContent=`${Math.floor(state.credits)}¢ · Escorts ${escorts.length} · Freighters ${freighters.length}`;
+  const buyBtn=document.getElementById('buy-escort-btn');
+  buyBtn.disabled=state.credits<ESCORT_CRAFT_COST;
+  buyBtn.textContent=`BUY ESCORT ${ESCORT_CRAFT_COST}¢`;
+  const grid=document.getElementById('escort-grid');
+  grid.innerHTML='';
+  if(!escorts.length){
+    const card=document.createElement('div');
+    card.className='trade-card';
+    card.innerHTML='<div class="trade-name">No escort craft</div><div class="trade-desc">Purchase escorts, then assign them to freighters. Escorts follow their assigned freighter and engage raiders that attack it.</div>';
+    grid.appendChild(card);
+    return;
+  }
+  escorts.forEach((e,i)=>{
+    const assigned=freighters.find(f=>f.id===e.assignedFreighterId);
+    const hpPct=Math.max(0,Math.round((e.hp/(e.maxHp||ESCORT_CRAFT_HEALTH))*100));
+    const threat=assigned?(state.tradeRaiders||[]).filter(r=>r.hp>0&&r.targetFreighterId===assigned.id).length:0;
+    const card=document.createElement('div');
+    card.className='trade-card'+(threat?' alert':'');
+    card.innerHTML=`<div class="trade-head">
+        <div class="trade-name">Escort ${i+1}</div>
+        <div class="trade-tag">${hpPct}% HULL</div>
+      </div>
+      <div class="trade-desc">
+        Assigned: ${assigned?`Freighter ${freighters.indexOf(assigned)+1}`:'None'}<br>
+        Status: <span style="color:${threat?'var(--red)':'var(--text-bright)'}">${escortStatusLabel(e)}</span>
+      </div>`;
+    const select=document.createElement('select');
+    select.className='trade-route-select';
+    select.innerHTML='<option value="">UNASSIGNED</option>';
+    freighters.forEach((f,idx)=>{
+      const opt=document.createElement('option');
+      opt.value=f.id;
+      opt.textContent=`Freighter ${idx+1}${f.underAttack?' - SOS':''}`;
+      opt.selected=e.assignedFreighterId===f.id;
+      select.appendChild(opt);
+    });
+    select.addEventListener('change',()=>assignEscortCraft(e.id,select.value));
     card.appendChild(select);
     grid.appendChild(card);
   });
@@ -2743,6 +2961,43 @@ window.assignFreighterRoute = function(freighterId,bodyId){
   }
   tradeMsg(target?`Freighter route set to ${target.name}.`:'Freighter route set to auto.', 'var(--green)');
   updateTradeUI();saveState();
+};
+
+window.assignEscortCraft = function(escortId,freighterId){
+  if(!state)return;
+  const e=(state.escorts||[]).find(es=>es.id===escortId);
+  if(!e)return;
+  const f=freighterId?(state.freighters||[]).find(fr=>fr.id===freighterId):null;
+  if(freighterId&&!f){
+    escortMsg('That freighter is no longer active.', 'var(--red)');
+    updateEscortUI();
+    return;
+  }
+  e.assignedFreighterId=f?f.id:null;
+  escortMsg(f?`Escort assigned to Freighter ${(state.freighters||[]).indexOf(f)+1}.`:'Escort unassigned.', 'var(--green)');
+  updateEscortUI();saveState();
+};
+
+window.buyEscortCraft = function(){
+  if(!state)return;
+  if(state.credits<ESCORT_CRAFT_COST){
+    escortMsg(`Need ${ESCORT_CRAFT_COST}¢ for an escort craft.`, 'var(--red)');
+    return;
+  }
+  state.credits-=ESCORT_CRAFT_COST;
+  const hub=getTradeHubPos();
+  const firstFreighter=(state.freighters||[])[0];
+  state.escorts.push({
+    id:idstr(),
+    x:hub.x+rnd(-26,26),y:hub.y+rnd(-26,26),
+    vx:0,vy:0,angle:-Math.PI/2,
+    hp:ESCORT_CRAFT_HEALTH,maxHp:ESCORT_CRAFT_HEALTH,
+    assignedFreighterId:firstFreighter?firstFreighter.id:null,
+    lastShot:0,
+  });
+  escortMsg(firstFreighter?'Escort purchased and assigned to Freighter 1.':'Escort purchased. Buy a freighter to assign it.', 'var(--green)');
+  notify('◈ Escort craft launched from Central Hub','var(--accent)');
+  updateEscortUI();updateHUD();saveState();
 };
 
 window.buyFreighter = function(){
@@ -3084,11 +3339,26 @@ function updateMothershipLaserHits(){
   if(!m||m.mode!=='combat')return;
   state.playerLasers=(state.playerLasers||[]).filter(l=>{
     if(l.life<=0)return false;
+    if(l.type==='flak'){
+      for(const p of l.pellets||[]){
+        if(p.life<=0)continue;
+        for(const comp of mothershipComponents()){
+          if(m[comp.key]<=0)continue;
+          if(Math.hypot(p.x-comp.x,p.y-comp.y)<comp.r){
+            damageMothershipComponent(comp,getWeaponDamage('flak')*0.55);
+            p.life=0;
+            break;
+          }
+        }
+      }
+      return (l.pellets||[]).some(p=>p.life>0);
+    }
     for(const comp of mothershipComponents()){
       if(m[comp.key]<=0)continue;
       const hit=l.type==='pulse'?Math.hypot(l.x-comp.x,l.y-comp.y)<l.radius+comp.r:Math.hypot(l.x-comp.x,l.y-comp.y)<comp.r;
       if(hit){
-        damageMothershipComponent(comp,getWeaponDamage(l.type||'laser'));
+        if(l.type==='gravity')spawnGravityWell(l.x,l.y);
+        else damageMothershipComponent(comp,getWeaponDamage(l.type||'laser'));
         return l.type==='pulse';
       }
     }
@@ -3240,6 +3510,7 @@ window.addEventListener('keydown', e=>{
     if(document.getElementById('mothership-screen').classList.contains('open')){ closeMothershipDialogue(); return; }
     if(document.getElementById('savecode-screen').classList.contains('open')){ closeSaveCodes(); return; }
     if(document.getElementById('station-screen').classList.contains('open')){ closeStation(); return; }
+    if(document.getElementById('escort-screen').classList.contains('open')){ closeEscortCraft(); return; }
     if(document.getElementById('trade-screen').classList.contains('open')){ closeTradeRoutes(); return; }
     if(document.getElementById('bonds-screen').classList.contains('open')){ closeBonds(); return; }
     if(document.getElementById('market-screen').classList.contains('open')){ closeMarket(); return; }
@@ -3309,6 +3580,23 @@ function makePlayerLaser(s,weaponId='laser'){
       fromEnemy:false,
     };
   }
+  if(weaponId==='flak'){
+    const pellets=[];
+    for(let i=0;i<FLAK_PELLETS;i++){
+      const spread=(-0.42)+(0.84*(i/Math.max(1,FLAK_PELLETS-1)))+rnd(-0.035,0.035);
+      const a=s.angle+spread;
+      const speed=rnd(8.2,11.2);
+      pellets.push({
+        x:s.x+Math.cos(a)*17,y:s.y+Math.sin(a)*17,
+        vx:Math.cos(a)*speed+s.vx*0.16,vy:Math.sin(a)*speed+s.vy*0.16,
+        life:Math.round(FLAK_RANGE/speed),
+        maxLife:Math.round(FLAK_RANGE/speed),
+        hitIds:{},
+      });
+    }
+    state.flakBursts.push({x:s.x,y:s.y,angle:s.angle,created:performance.now(),life:180,pellets});
+    return {type:'flak',pellets,life:28,maxLife:28,fromEnemy:false};
+  }
   return {
     type:weaponId,
     x:s.x+Math.cos(s.angle)*16,
@@ -3321,12 +3609,81 @@ function makePlayerLaser(s,weaponId='laser'){
   };
 }
 
+function findBeamTarget(){
+  if(!state)return null;
+  const s=state.ship;
+  const dir={x:Math.cos(s.angle),y:Math.sin(s.angle)};
+  let best=null;
+  function consider(t,kind,radius=16){
+    if(!t||t.hp<=0)return;
+    const dx=t.x-s.x,dy=t.y-s.y;
+    const forward=dx*dir.x+dy*dir.y;
+    if(forward<8||forward>620)return;
+    const lateral=Math.abs(dx*dir.y-dy*dir.x);
+    if(lateral>radius+16)return;
+    const score=forward+lateral*8;
+    if(!best||score<best.score)best={target:t,kind,score,x:t.x,y:t.y};
+  }
+  for(const r of (state.tradeRaiders||[]))consider(r,'raider',16);
+  for(const e of (state.enemies||[]))consider(e,'enemy',16);
+  if(state.mothership&&state.mothership.mode==='combat'){
+    for(const comp of mothershipComponents()){
+      if(state.mothership[comp.key]>0)consider({...comp,hp:state.mothership[comp.key]},'mothership',comp.r);
+    }
+  }
+  return best;
+}
+
+function fireShieldBurst(){
+  const maxHull=getMaxHull();
+  const hp=state.playerHp===undefined?maxHull:state.playerHp;
+  if(hp<=maxHull*0.5){
+    notify('Hull Integrity must be above 50% for Shield Burst.','var(--red)');
+    return false;
+  }
+  const shieldDrain=state.playerShield||0;
+  if(shieldDrain>0)state.playerShield=0;
+  else state.playerHp=Math.max(maxHull*0.5,state.playerHp-18);
+  const s=state.ship;
+  state.enemyLasers=(state.enemyLasers||[]).filter(l=>Math.hypot(l.x-s.x,l.y-s.y)>SHIELD_BURST_RADIUS);
+  const until=performance.now()+SHIELD_BURST_DISABLE;
+  for(const e of (state.enemies||[])){
+    if(Math.hypot(e.x-s.x,e.y-s.y)<SHIELD_BURST_RADIUS){
+      e.disabledUntil=until;e.vx*=0.2;e.vy*=0.2;e.state='attack';
+    }
+  }
+  for(const r of (state.tradeRaiders||[])){
+    if(Math.hypot(r.x-s.x,r.y-s.y)<SHIELD_BURST_RADIUS){
+      r.disabledUntil=until;r.vx*=0.2;r.vy*=0.2;
+    }
+  }
+  state.shockwaves.push({x:s.x,y:s.y,radius:20,maxRadius:SHIELD_BURST_RADIUS,life:28,maxLife:28});
+  state.screenShake=Math.max(state.screenShake||0,10);
+  notify('🛡 Overcharged shield burst fired!', 'var(--accent)');
+  return true;
+}
+
 function fireLaser(){
   if(!state||!gameRunning||gameOver||gamePaused) return;
   const weaponId=state.activeWeapon||'laser';
   const def=getWeaponDef(weaponId);
   const now = performance.now();
   if(now - (state.lastPlayerShot||0) < getWeaponCooldown(weaponId)) return;
+  if(weaponId==='solar'){
+    if(state.food<=0){
+      notify(`Need food to channel ${def.name}.`,'var(--red)');
+      return;
+    }
+    state.solarBeam={target:null,kind:null,charge:0,life:90,damageTick:0};
+    state.lastPlayerShot=now;
+    return;
+  }
+  if(weaponId==='shieldburst'){
+    if(!fireShieldBurst())return;
+    state.lastPlayerShot=now;
+    updateHUD();
+    return;
+  }
   if(def.fuelCost&&state.fuel<def.fuelCost){
     notify(`Need ${def.fuelCost} fuel to fire ${def.name}.`,'var(--red)');
     return;
@@ -3547,6 +3904,81 @@ function resolveRamCollisions(){
   for(const r of (state.tradeRaiders||[]))resolveRamTarget(r,'raider');
 }
 
+function spawnGravityWell(x,y){
+  state.gravityWells.push({x,y,radius:32,maxRadius:GRAVITY_WELL_RADIUS,life:GRAVITY_WELL_DURATION,total:GRAVITY_WELL_DURATION});
+  state.screenShake=Math.max(state.screenShake||0,6);
+  notify('● Gravity well armed — raiders snared', '#9b4dff');
+}
+
+function applyGravityWells(dt){
+  if(!state)return;
+  const wells=state.gravityWells||[];
+  const now=performance.now();
+  for(const w of wells){
+    w.life-=dt;
+    w.radius=Math.min(w.maxRadius, w.radius+dt*0.18);
+    for(const t of [...(state.enemies||[]),...(state.tradeRaiders||[])]){
+      if(!t||t.hp<=0)continue;
+      const dx=w.x-t.x,dy=w.y-t.y;
+      const dist=Math.hypot(dx,dy)||1;
+      if(dist>w.radius)continue;
+      const pull=(1-dist/w.radius)*GRAVITY_WELL_PULL+0.05;
+      t.vx+=dx/dist*pull;
+      t.vy+=dy/dist*pull;
+      t.disabledUntil=Math.max(t.disabledUntil||0,now+180);
+      if(t.state)t.state='attack';
+    }
+  }
+  state.gravityWells=wells.filter(w=>w.life>0);
+}
+
+function damageTarget(target,kind,amount){
+  if(kind==='mothership'){
+    const comp=mothershipComponents().find(c=>c.key===target.key);
+    if(comp)damageMothershipComponent(comp,amount);
+    return;
+  }
+  target.hp-=amount;
+  if(kind==='enemy')target.state='attack';
+  if(target.hp<=0&&!target._bountyPaid){
+    target._bountyPaid=true;
+    state.raidersDestroyedSession=(state.raidersDestroyedSession||0)+1;
+    state.credits+=kind==='enemy'?40:30;
+    notify(kind==='enemy'?'💥 Enemy destroyed! +40¢ bounty':'💥 Escort raider destroyed! +30¢ bounty','var(--green)');
+  }
+}
+
+function updateSolarBeam(dt){
+  if(!state)return;
+  const beam=state.solarBeam;
+  if(!beam||state.activeWeapon!=='solar'||!state.fireHeld){
+    state.solarBeam=null;
+    return;
+  }
+  const sec=dt/1000;
+  const cost=SOLAR_BEAM_FOOD_PER_SEC*sec;
+  if(state.food<cost){
+    state.solarBeam=null;
+    notify('Solar Beam starved — reactor needs food.','var(--red)');
+    return;
+  }
+  state.food=Math.max(0,state.food-cost);
+  state.ship.vx=0;state.ship.vy=0;
+  beam.life=90;
+  const lock=findBeamTarget();
+  if(lock){
+    const same=beam.target===lock.target&&beam.kind===lock.kind;
+    beam.charge=same?Math.min(1,beam.charge+sec*0.55):0.08;
+    beam.target=lock.target;beam.kind=lock.kind;beam.x=lock.x;beam.y=lock.y;
+    const dps=SOLAR_BEAM_BASE_DPS+(SOLAR_BEAM_MAX_DPS-SOLAR_BEAM_BASE_DPS)*beam.charge;
+    damageTarget(lock.target,lock.kind,dps*sec);
+  } else {
+    beam.target=null;beam.kind=null;beam.charge=Math.max(0,beam.charge-sec*0.8);
+    beam.x=state.ship.x+Math.cos(state.ship.angle)*520;
+    beam.y=state.ship.y+Math.sin(state.ship.angle)*520;
+  }
+}
+
 function updateEnemies(dt, now){
   if(!state) return;
   const s = state.ship;
@@ -3582,6 +4014,11 @@ function updateEnemies(dt, now){
     // or player tried to steal from an enemy planet).
     // Roaming ships are completely passive — they ignore the player.
     const distToPlayer = Math.hypot(s.x-e.x, s.y-e.y);
+    if((e.disabledUntil||0)>now){
+      e.vx*=0.9;e.vy*=0.9;
+      e.x+=e.vx;e.y+=e.vy;
+      continue;
+    }
 
     if(e.state === 'retaliate'){
       // Actively hunting the player — keeps attacking until destroyed
@@ -3689,6 +4126,11 @@ function updateEnemies(dt, now){
       const t=1-(l.life/l.maxLife);
       l.radius=18+(l.maxRadius-18)*t;
       l.life--;
+    } else if(l.type==='flak'){
+      l.life--;
+      for(const p of l.pellets||[]){
+        p.x+=p.vx;p.y+=p.vy;p.vx*=0.985;p.vy*=0.985;p.life--;
+      }
     } else {
       l.x+=l.vx;l.y+=l.vy;l.life--;
     }
@@ -3696,6 +4138,10 @@ function updateEnemies(dt, now){
 
   // ── Player lasers hit enemies — hitting a ship makes it retaliate ───
   state.playerLasers = (state.playerLasers||[]).filter(l=>{
+    if(l.type==='gravity'&&l.life<=0){
+      spawnGravityWell(l.x,l.y);
+      return false;
+    }
     if(l.life<=0) return false;
     if(l.type==='pulse'){
       for(const r of (state.tradeRaiders||[])){
@@ -3727,28 +4173,44 @@ function updateEnemies(dt, now){
       }
       return true;
     }
+    if(l.type==='flak'){
+      for(const p of l.pellets||[]){
+        if(p.life<=0)continue;
+        for(const r of (state.tradeRaiders||[])){
+          if(p.hitIds[r.id]||r.hp<=0)continue;
+          if(Math.hypot(p.x-r.x,p.y-r.y)<13){
+            p.hitIds[r.id]=true;
+            const dx=r.x-state.ship.x,dy=r.y-state.ship.y,dist=Math.hypot(dx,dy)||1;
+            r.vx+=dx/dist*FLAK_KNOCKBACK;r.vy+=dy/dist*FLAK_KNOCKBACK;
+            damageTarget(r,'raider',getWeaponDamage('flak'));
+            p.life=0;
+            break;
+          }
+        }
+        for(const e of state.enemies){
+          if(p.life<=0||p.hitIds[e.id]||e.hp<=0)continue;
+          if(Math.hypot(p.x-e.x,p.y-e.y)<13){
+            p.hitIds[e.id]=true;
+            const dx=e.x-state.ship.x,dy=e.y-state.ship.y,dist=Math.hypot(dx,dy)||1;
+            e.vx+=dx/dist*FLAK_KNOCKBACK;e.vy+=dy/dist*FLAK_KNOCKBACK;
+            damageTarget(e,'enemy',getWeaponDamage('flak'));
+            p.life=0;
+          }
+        }
+      }
+      return (l.pellets||[]).some(p=>p.life>0);
+    }
     for(const r of (state.tradeRaiders||[])){
       if(Math.hypot(l.x-r.x,l.y-r.y)<(l.type==='railgun'?9:12)){
-        r.hp -= getWeaponDamage(l.type||'laser');
-        if(r.hp<=0&&!r._bountyPaid){
-          r._bountyPaid=true;
-          state.raidersDestroyedSession=(state.raidersDestroyedSession||0)+1;
-          notify('💥 Escort raider destroyed! +30¢ bounty','var(--green)');
-          state.credits += 30;
-        }
+        if(l.type==='gravity')spawnGravityWell(l.x,l.y);
+        else damageTarget(r,'raider',getWeaponDamage(l.type||'laser'));
         return false;
       }
     }
     for(const e of state.enemies){
       if(Math.hypot(l.x-e.x,l.y-e.y)<(l.type==='railgun'?9:12)){
-        e.hp -= getWeaponDamage(l.type||'laser');
-        e.state = 'attack'; // ship retaliates when shot
-        if(e.hp<=0&&!e._bountyPaid){
-          e._bountyPaid=true;
-          state.raidersDestroyedSession=(state.raidersDestroyedSession||0)+1;
-          notify('💥 Enemy destroyed! +40¢ bounty','var(--green)');
-          state.credits += 40;
-        }
+        if(l.type==='gravity')spawnGravityWell(l.x,l.y);
+        else damageTarget(e,'enemy',getWeaponDamage(l.type||'laser'));
         return false;
       }
     }
@@ -3814,6 +4276,84 @@ function spawnTradeRaider(f){
   state.tradeRaiders.push(raider);
   f.underAttack=true;
   notify('⚠ Escort mission: raiders targeting a freighter!', 'var(--red)');
+}
+
+function escortAssignedToFreighter(freighterId){
+  return (state.escorts||[]).filter(e=>e.hp>0&&e.assignedFreighterId===freighterId);
+}
+
+function updateEscorts(dt,now){
+  if(!state)return;
+  const hub=getTradeHubPos();
+  const freighters=state.freighters||[];
+  state.escorts=(state.escorts||[]).filter(e=>e.hp>0);
+
+  for(const e of state.escorts){
+    const f=freighters.find(fr=>fr.id===e.assignedFreighterId&&fr.hp>0);
+    const threats=f?(state.tradeRaiders||[]).filter(r=>r.hp>0&&r.targetFreighterId===f.id):[];
+    const target=threats.length?threats.reduce((best,r)=>{
+      const d=Math.hypot(r.x-e.x,r.y-e.y);
+      return !best||d<best.d?{r,d}:best;
+    },null).r:null;
+
+    let tx,ty,desiredRange=42;
+    if(target){
+      tx=target.x;ty=target.y;desiredRange=72;
+    } else if(f){
+      const escorts=escortAssignedToFreighter(f.id);
+      const slot=Math.max(0,escorts.findIndex(es=>es.id===e.id));
+      const a=(slot/Math.max(1,escorts.length))*Math.PI*2+now*0.00055;
+      tx=f.x+Math.cos(a)*48;
+      ty=f.y+Math.sin(a)*48;
+      desiredRange=20;
+    } else {
+      tx=hub.x;ty=hub.y;desiredRange=34;
+      e.assignedFreighterId=null;
+    }
+
+    const want=Math.atan2(ty-e.y,tx-e.x);
+    let da=want-(e.angle||0);
+    while(da>Math.PI)da-=Math.PI*2;
+    while(da<-Math.PI)da+=Math.PI*2;
+    e.angle=(e.angle||0)+Math.sign(da)*Math.min(Math.abs(da),ROTATE_SPEED*1.9);
+    const dist=Math.hypot(tx-e.x,ty-e.y);
+    if(dist>desiredRange){
+      e.vx+=Math.cos(e.angle)*ESCORT_CRAFT_SPEED;
+      e.vy+=Math.sin(e.angle)*ESCORT_CRAFT_SPEED;
+    }
+    e.vx*=0.972;e.vy*=0.972;
+    const sp=Math.hypot(e.vx,e.vy);
+    if(sp>6.4){e.vx=e.vx/sp*6.4;e.vy=e.vy/sp*6.4;}
+    e.x+=e.vx;e.y+=e.vy;
+
+    if(target&&Math.hypot(target.x-e.x,target.y-e.y)<260&&now-(e.lastShot||0)>ESCORT_CRAFT_LASER_CD){
+      e.lastShot=now;
+      target.hp-=ESCORT_CRAFT_DAMAGE;
+      state.escortLasers.push({x:e.x,y:e.y,x2:target.x,y2:target.y,life:180,maxLife:180});
+      if(target.hp<=0&&!target._bountyPaid){
+        target._bountyPaid=true;
+        state.raidersDestroyedSession=(state.raidersDestroyedSession||0)+1;
+        state.credits+=18;
+        notify('◈ Escort destroyed a raider! +18¢ bounty','var(--green)');
+        updateHUD();
+      }
+    }
+  }
+
+  state.escortLasers=(state.escortLasers||[]).filter(l=>{
+    l.life-=dt;
+    return l.life>0;
+  });
+
+  for(const f of freighters){
+    const threats=(state.tradeRaiders||[]).filter(r=>r.hp>0&&r.targetFreighterId===f.id);
+    if(!threats.length)continue;
+    const guards=escortAssignedToFreighter(f.id);
+    if(threats.length>guards.length&&now-(f.lastOverwhelmedNotice||0)>9000){
+      f.lastOverwhelmedNotice=now;
+      notify(`⚠ Freighter escort overwhelmed: ${threats.length} raiders vs ${guards.length} escorts`, 'var(--red)');
+    }
+  }
 }
 
 function updateTradeRoutes(dt){
@@ -3887,6 +4427,11 @@ function updateTradeRoutes(dt){
   for(const r of state.tradeRaiders){
     const f=freighters.find(fr=>fr.id===r.targetFreighterId&&fr.hp>0);
     if(!f){r.hp=0;continue;}
+    if((r.disabledUntil||0)>performance.now()){
+      r.vx*=0.9;r.vy*=0.9;
+      r.x+=r.vx;r.y+=r.vy;
+      continue;
+    }
     const dx=f.x-r.x, dy=f.y-r.y;
     const dist=Math.hypot(dx,dy)||1;
     const want=Math.atan2(dy,dx);
@@ -3906,8 +4451,17 @@ function updateTradeRoutes(dt){
       r.attackTimer=(r.attackTimer||0)+dt;
       if(r.attackTimer>760){
         r.attackTimer=0;
-        f.hp=Math.max(0,f.hp-8);
-        f.underAttack=true;
+        const guard=escortAssignedToFreighter(f.id)
+          .filter(e=>Math.hypot(e.x-r.x,e.y-r.y)<120)
+          .sort((a,b)=>Math.hypot(a.x-r.x,a.y-r.y)-Math.hypot(b.x-r.x,b.y-r.y))[0];
+        if(guard){
+          guard.hp=Math.max(0,guard.hp-7);
+          f.underAttack=true;
+          if(guard.hp<=0)notify('◈ Escort craft destroyed defending a freighter!', 'var(--red)');
+        } else {
+          f.hp=Math.max(0,f.hp-8);
+          f.underAttack=true;
+        }
         if(f.hp<=0){
           notify('▣ Freighter destroyed on trade route!', 'var(--red)');
           r.hp=0;
@@ -3920,6 +4474,7 @@ function updateTradeRoutes(dt){
   }
   state.freighters=freighters.filter(f=>f.hp>0);
   if(document.getElementById('trade-screen').classList.contains('open'))updateTradeUI();
+  if(document.getElementById('escort-screen').classList.contains('open'))updateEscortUI();
 }
 
 // Reclaim a planet taken by enemies
@@ -4077,8 +4632,11 @@ function update(dt){
   tickBuilding(dt);
   updateEnemies(dt, performance.now());
   updateTradeRoutes(dt);
+  updateEscorts(dt, performance.now());
   updateMothership(dt);
   updateVoidEvents(dt);
+  applyGravityWells(dt);
+  updateSolarBeam(dt);
 
   if(mouseAimMode){
     // Smoothly snap ship angle toward the mouse cursor in world-space
@@ -4092,7 +4650,8 @@ function update(dt){
     if(keys['ArrowRight']||keys['d']||keys['D'])s.angle+=ROTATE_SPEED;
   }
 
-  if(keys['ArrowUp']||keys['w']||keys['W']){
+  const thrustersLocked=!!state.solarBeam&&state.activeWeapon==='solar'&&state.fireHeld;
+  if(!thrustersLocked&&(keys['ArrowUp']||keys['w']||keys['W'])){
     s.vx+=Math.cos(s.angle)*getThrust();s.vy+=Math.sin(s.angle)*getThrust();
     state.fuel-=FUEL_DRAIN_BASE*getFuelDrain();
     exhaustTimer+=dt;
@@ -4106,10 +4665,10 @@ function update(dt){
       });
     }
   }
-  if(keys['ArrowDown']||keys['s']||keys['S']||keys['_brake']){s.vx*=0.93;s.vy*=0.93;state.fuel-=FUEL_DRAIN_BASE*0.4*getFuelDrain();}
+  if(!thrustersLocked&&(keys['ArrowDown']||keys['s']||keys['S']||keys['_brake'])){s.vx*=0.93;s.vy*=0.93;state.fuel-=FUEL_DRAIN_BASE*0.4*getFuelDrain();}
 
   // Touch joystick
-  if(isMobile) applyJoystick();
+  if(isMobile&&!thrustersLocked) applyJoystick();
   s.vx*=FRICTION;s.vy*=FRICTION;
   const spd=Math.hypot(s.vx,s.vy);
   if(spd>8){s.vx=s.vx/spd*8;s.vy=s.vy/spd*8;}
@@ -4469,6 +5028,32 @@ function draw(){
   for(const f of (state.freighters||[]))drawFreighter(ctx,f,state.tick);
   drawShip(ctx,state.ship);
 
+  for(const w of (state.gravityWells||[])){
+    const alpha=Math.max(0,w.life/w.total);
+    ctx.save();
+    const g=ctx.createRadialGradient(w.x,w.y,0,w.x,w.y,w.radius);
+    g.addColorStop(0,`rgba(155,77,255,${0.38*alpha})`);
+    g.addColorStop(0.45,`rgba(0,212,255,${0.12*alpha})`);
+    g.addColorStop(1,'transparent');
+    ctx.beginPath();ctx.arc(w.x,w.y,w.radius,0,Math.PI*2);ctx.fillStyle=g;ctx.fill();
+    ctx.beginPath();ctx.arc(w.x,w.y,Math.max(8,w.radius*0.12),0,Math.PI*2);
+    ctx.strokeStyle=`rgba(200,160,255,${0.8*alpha})`;ctx.lineWidth=2;ctx.stroke();
+    ctx.restore();
+  }
+
+  for(const sw of (state.shockwaves||[])){
+    const t=1-sw.life/sw.maxLife;
+    sw.radius=20+(sw.maxRadius-20)*t;
+    const alpha=Math.max(0,sw.life/sw.maxLife);
+    ctx.save();
+    ctx.beginPath();ctx.arc(sw.x,sw.y,sw.radius,0,Math.PI*2);
+    ctx.strokeStyle=`rgba(0,212,255,${0.85*alpha})`;ctx.lineWidth=3;ctx.stroke();
+    ctx.beginPath();ctx.arc(sw.x,sw.y,sw.radius*0.72,0,Math.PI*2);
+    ctx.strokeStyle=`rgba(255,255,255,${0.28*alpha})`;ctx.lineWidth=1;ctx.stroke();
+    ctx.restore();
+  }
+  state.shockwaves=(state.shockwaves||[]).filter(sw=>--sw.life>0);
+
   // Draw player lasers
   for(const l of (state.playerLasers||[])){
     const alpha = l.life/(l.maxLife||LASER_LIFE);
@@ -4478,15 +5063,49 @@ function draw(){
       ctx.strokeStyle=`rgba(0,255,255,${alpha*0.75})`;ctx.lineWidth=2.5;ctx.stroke();
       ctx.beginPath();ctx.arc(l.x,l.y,l.radius*0.72,0,Math.PI*2);
       ctx.strokeStyle=`rgba(80,180,255,${alpha*0.35})`;ctx.lineWidth=1;ctx.stroke();
+    } else if(l.type==='flak'){
+      for(const p of l.pellets||[]){
+        if(p.life<=0)continue;
+        const pa=Math.max(0,p.life/(p.maxLife||1));
+        ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x-p.vx*2.2,p.y-p.vy*2.2);
+        ctx.strokeStyle=`rgba(255,210,130,${pa})`;ctx.lineWidth=2;ctx.stroke();
+      }
     } else {
-      const rail=l.type==='railgun';
-      const lg=ctx.createRadialGradient(l.x,l.y,0,l.x,l.y,rail?6:4);
-      lg.addColorStop(0,rail?`rgba(255,230,120,${alpha})`:`rgba(0,255,255,${alpha})`);
+      const rail=l.type==='railgun', gravity=l.type==='gravity';
+      const lg=ctx.createRadialGradient(l.x,l.y,0,l.x,l.y,rail?6:gravity?8:4);
+      lg.addColorStop(0,gravity?`rgba(155,77,255,${alpha})`:rail?`rgba(255,230,120,${alpha})`:`rgba(0,255,255,${alpha})`);
       lg.addColorStop(1,'transparent');
-      ctx.beginPath();ctx.arc(l.x,l.y,rail?6:4,0,Math.PI*2);ctx.fillStyle=lg;ctx.fill();
-      ctx.beginPath();ctx.moveTo(l.x,l.y);ctx.lineTo(l.x-l.vx*(rail?5:3),l.y-l.vy*(rail?5:3));
-      ctx.strokeStyle=rail?`rgba(255,210,80,${alpha})`:`rgba(0,220,255,${alpha})`;
-      ctx.lineWidth=rail?3:2;ctx.stroke();
+      ctx.beginPath();ctx.arc(l.x,l.y,rail?6:gravity?8:4,0,Math.PI*2);ctx.fillStyle=lg;ctx.fill();
+      ctx.beginPath();ctx.moveTo(l.x,l.y);ctx.lineTo(l.x-l.vx*(rail||gravity?5:3),l.y-l.vy*(rail||gravity?5:3));
+      ctx.strokeStyle=gravity?`rgba(155,77,255,${alpha})`:rail?`rgba(255,210,80,${alpha})`:`rgba(0,220,255,${alpha})`;
+      ctx.lineWidth=rail||gravity?3:2;ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  for(const burst of (state.flakBursts||[])){
+    const alpha=Math.max(0,burst.life/180);
+    ctx.save();
+    ctx.translate(burst.x,burst.y);ctx.rotate(burst.angle);
+    ctx.beginPath();ctx.moveTo(10,-6);ctx.lineTo(56,-28);ctx.lineTo(56,28);ctx.closePath();
+    ctx.fillStyle=`rgba(255,180,80,${0.16*alpha})`;ctx.fill();
+    ctx.restore();
+    burst.life-=16;
+  }
+  state.flakBursts=(state.flakBursts||[]).filter(b=>b.life>0);
+
+  if(state.solarBeam&&state.activeWeapon==='solar'){
+    const beam=state.solarBeam;
+    const alpha=beam.target?0.85:0.32;
+    ctx.save();
+    ctx.beginPath();ctx.moveTo(state.ship.x+Math.cos(state.ship.angle)*18,state.ship.y+Math.sin(state.ship.angle)*18);
+    ctx.lineTo(beam.x,beam.y);
+    ctx.strokeStyle=`rgba(255,215,0,${alpha})`;ctx.lineWidth=4+beam.charge*4;ctx.stroke();
+    ctx.beginPath();ctx.moveTo(state.ship.x,state.ship.y);ctx.lineTo(beam.x,beam.y);
+    ctx.strokeStyle=`rgba(255,90,20,${0.28+beam.charge*0.32})`;ctx.lineWidth=1.5;ctx.stroke();
+    if(beam.target){
+      ctx.beginPath();ctx.arc(beam.x,beam.y,10+beam.charge*8,0,Math.PI*2);
+      ctx.strokeStyle=`rgba(255,240,120,${0.75})`;ctx.lineWidth=2;ctx.stroke();
     }
     ctx.restore();
   }
@@ -4506,6 +5125,18 @@ function draw(){
 
   for(const r of (state.tradeRaiders||[])){
     drawTradeRaider(ctx,r,state.tick);
+  }
+  for(const e of (state.escorts||[])){
+    drawEscortCraft(ctx,e,state.tick);
+  }
+  for(const l of (state.escortLasers||[])){
+    const alpha=Math.max(0,l.life/(l.maxLife||180));
+    ctx.save();
+    ctx.beginPath();ctx.moveTo(l.x,l.y);ctx.lineTo(l.x2,l.y2);
+    ctx.strokeStyle=`rgba(255,215,0,${0.68*alpha})`;ctx.lineWidth=2;ctx.stroke();
+    ctx.beginPath();ctx.arc(l.x2,l.y2,4,0,Math.PI*2);
+    ctx.fillStyle=`rgba(255,215,0,${0.48*alpha})`;ctx.fill();
+    ctx.restore();
   }
 
   // Draw enemies
@@ -4557,6 +5188,12 @@ function draw(){
     ctx.fillStyle='rgba(255,45,85,0.8)';
     ctx.font='9px "Share Tech Mono"';ctx.textAlign='center';
     ctx.fillText('HOSTILE',e.x,e.y+22);
+    if((e.disabledUntil||0)>performance.now()){
+      ctx.beginPath();ctx.arc(e.x,e.y,22+Math.sin(state.tick*0.18)*2,0,Math.PI*2);
+      ctx.strokeStyle='rgba(0,212,255,0.75)';ctx.lineWidth=1.2;ctx.stroke();
+      ctx.fillStyle='rgba(0,212,255,0.9)';
+      ctx.fillText('DISABLED',e.x,e.y+34);
+    }
   }
   drawBlackFlashEffects(ctx);
 
@@ -4965,6 +5602,30 @@ function drawFreighter(ctx,f,tick){
   }
 }
 
+function drawEscortCraft(ctx,e,tick){
+  ctx.save();ctx.translate(e.x,e.y);ctx.rotate(e.angle||0);
+  const pulse=0.5+0.5*Math.sin(tick*0.08);
+  const glow=ctx.createRadialGradient(0,0,0,0,0,18);
+  glow.addColorStop(0,`rgba(255,215,0,${0.14+0.1*pulse})`);
+  glow.addColorStop(1,'transparent');
+  ctx.beginPath();ctx.arc(0,0,18,0,Math.PI*2);ctx.fillStyle=glow;ctx.fill();
+  ctx.beginPath();ctx.moveTo(13,0);ctx.lineTo(-9,-7);ctx.lineTo(-5,0);ctx.lineTo(-9,7);ctx.closePath();
+  ctx.fillStyle='#30240a';ctx.strokeStyle='#ffd700';ctx.lineWidth=1.4;ctx.fill();ctx.stroke();
+  ctx.beginPath();ctx.ellipse(3,0,4.5,2.8,0,0,Math.PI*2);
+  ctx.fillStyle='rgba(255,215,0,0.72)';ctx.fill();
+  ctx.beginPath();ctx.moveTo(-4,-7);ctx.lineTo(-12,-13);ctx.lineTo(-12,-5);ctx.closePath();
+  ctx.fillStyle='#5a4510';ctx.strokeStyle='#ffd700';ctx.lineWidth=0.9;ctx.fill();ctx.stroke();
+  ctx.beginPath();ctx.moveTo(-4,7);ctx.lineTo(-12,13);ctx.lineTo(-12,5);ctx.closePath();
+  ctx.fill();ctx.stroke();
+  ctx.restore();
+
+  const hpFrac=Math.max(0,e.hp/(e.maxHp||ESCORT_CRAFT_HEALTH));
+  ctx.fillStyle='rgba(0,0,0,0.48)';ctx.fillRect(e.x-16,e.y-24,32,3);
+  ctx.fillStyle=hpFrac>0.45?'#ffd700':hpFrac>0.2?'#ff9f1c':'#ff2d55';
+  ctx.fillRect(e.x-16,e.y-24,32*hpFrac,3);
+  ctx.strokeStyle='rgba(255,215,0,0.45)';ctx.lineWidth=0.5;ctx.strokeRect(e.x-16,e.y-24,32,3);
+}
+
 function drawTradeRaider(ctx,r,tick){
   ctx.save();ctx.translate(r.x,r.y);ctx.rotate(r.angle);
   if(r.warpUntil&&performance.now()<r.warpUntil){
@@ -4988,6 +5649,12 @@ function drawTradeRaider(ctx,r,tick){
   ctx.fillStyle='rgba(255,45,85,0.86)';
   ctx.font='8px "Share Tech Mono"';ctx.textAlign='center';
   ctx.fillText('RAIDER',r.x,r.y+21);
+  if((r.disabledUntil||0)>performance.now()){
+    ctx.beginPath();ctx.arc(r.x,r.y,20+Math.sin(tick*0.18)*2,0,Math.PI*2);
+    ctx.strokeStyle='rgba(0,212,255,0.75)';ctx.lineWidth=1.1;ctx.stroke();
+    ctx.fillStyle='rgba(0,212,255,0.9)';
+    ctx.fillText('JAMMED',r.x,r.y+32);
+  }
 }
 
 function drawOffscreenIndicators(ctx,camX,camY){
