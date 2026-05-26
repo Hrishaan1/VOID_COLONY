@@ -33,6 +33,11 @@ In **VOID COLONY**, you command a lone colony ship in a dynamic solar system. Ba
 * **Layered Rendering:** Uses dual HTML5 Canvases to handle high-frequency physics updates and background star-fields separately.
 
 ## Patch Notes
+- **Future Update - Infinity**
+    - A new passive type weapon that slows down all projectiles (to almost a full stop) when they are within a certain radius of you
+        - The radius can be customized by the player, at the cost of higher cost to activate infinity with higher radii
+    - Will cost 0.5 food per second that it is active
+    - Pressing the shoot key will toggle infinity
 - **Future Update - Baby Mode**
     - Much easier for people who are bad at the game
     - weapons instant kill raiders
