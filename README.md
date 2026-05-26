@@ -33,6 +33,11 @@ In **VOID COLONY**, you command a lone colony ship in a dynamic solar system. Ba
 * **Layered Rendering:** Uses dual HTML5 Canvases to handle high-frequency physics updates and background star-fields separately.
 
 ## Patch Notes
+- **Future Update - Baby Mode**
+    - Much easier for people who are bad at the game
+    - weapons instant kill raiders
+    - black flash cannot be missed
+    - Everything is cheaper, and you gain more money from all 
 - **v1.13 - Advanced Weapon Systems**
     - Added Gravity Well Launcher, Kinetic Flak Cannon, Solar Beam Overdrive, and Overcharged Shield Burst
     - Gravity wells pull nearby raiders into a temporary trap for easier Divergent Ram setups
