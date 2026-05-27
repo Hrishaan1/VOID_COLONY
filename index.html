@@ -23,6 +23,9 @@
   #hud-bottom{bottom:12px;left:50%;transform:translateX(-50%);display:flex;gap:20px;align-items:center;padding:8px 20px;pointer-events:all;}
   .hud-label{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--text);margin-bottom:3px;}
   .hud-value{font-family:'Orbitron',monospace;font-size:14px;font-weight:700;color:var(--text-bright);}
+  .credits-wrap{position:relative;display:inline-flex;align-items:center;justify-content:flex-end;gap:8px;}
+  .credit-pop{position:absolute;right:calc(100% + 8px);top:50%;font-family:'Orbitron',monospace;font-size:11px;font-weight:700;color:var(--green);text-shadow:0 0 8px rgba(57,255,20,0.55);white-space:nowrap;pointer-events:none;opacity:0;transform:translate(8px,-50%);transition:opacity 0.18s,transform 0.18s;}
+  .credit-pop.show{opacity:1;transform:translate(0,-50%);}
   .bar-wrap{width:100%;height:6px;background:rgba(255,255,255,0.08);border:1px solid var(--border);margin-top:4px;overflow:hidden;}
   .bar-fill{height:100%;transition:width 0.3s;}
   .fuel-bar{background:linear-gradient(90deg,#ff4500,var(--fuel-color));}
@@ -302,7 +305,7 @@
       </div>
     </div>
     <div class="hud-panel" id="hud-top-right">
-      <div class="stat-row"><div class="hud-label">💳 Credits</div><div class="hud-value" id="credits-val" style="color:var(--yellow)">200</div></div>
+      <div class="stat-row"><div class="hud-label">💳 Credits</div><div class="credits-wrap"><span class="credit-pop" id="freighter-credit-pop"></span><div class="hud-value" id="credits-val" style="color:var(--yellow)">200</div></div></div>
       <div class="stat-row"><div class="hud-label">System</div><div class="hud-value" id="system-val">Sol Prime</div></div>
       <div class="stat-row"><div class="hud-label">Weapon</div><div class="hud-value" id="weapon-val">Cyan Laser</div></div>
       <div class="stat-row"><div class="hud-label">Colonies</div><div class="hud-value" id="colony-count">0</div></div>
@@ -549,6 +552,16 @@
     <div class="overlay-title">PATCH NOTES</div>
     <div class="overlay-box">
       <div class="patch-scroll">
+        <div class="patch-entry">
+          <div class="patch-version">v1.14 — Infinity</div>
+          <ul class="patch-list">
+            <li>Added Infinity as a passive space station weapon</li>
+            <li>Press fire with Infinity equipped to toggle a slowing field around the ship</li>
+            <li>Enemy projectiles and raiders slow dramatically as they approach the field center</li>
+            <li>Infinity radius can be customized with a station slider and higher food activation costs</li>
+            <li>Active Infinity drains 0.5 food per second</li>
+          </ul>
+        </div>
         <div class="patch-entry">
           <div class="patch-version">v1.13 — Advanced Weapon Systems</div>
           <ul class="patch-list">
@@ -877,6 +890,11 @@ const SOLAR_BEAM_BASE_DPS = 18;
 const SOLAR_BEAM_MAX_DPS = 92;
 const SHIELD_BURST_RADIUS = 260;
 const SHIELD_BURST_DISABLE = 3000;
+const INFINITY_FOOD_PER_SEC = 0.5;
+const INFINITY_RADIUS_MIN = 60;
+const INFINITY_RADIUS_MAX = 160;
+const INFINITY_RADIUS_STEP = 5;
+const INFINITY_RADIUS_DEFAULT = 95;
 const VOID_EVENT_INTERVAL = 70000;
 const SOLAR_FLARE_DURATION = 18000;
 const COMET_DOCK_RANGE = 46;
@@ -949,6 +967,8 @@ const WEAPON_DEFS=[
    desc:'Hold fire to channel a scaling beam onto one target. Thrusters lock while the reactor eats food.'},
   {id:'shieldburst',name:'Overcharged Shield Burst',cost:320,cooldown:1400,damage:0,
    desc:'Emergency shockwave. Burns shield or hull energy to clear projectiles and disable nearby raider engines.'},
+  {id:'infinity',name:'Infinity',cost:420,cooldown:350,damage:0,passive:true,
+   desc:'Toggle a passive slow field that brings incoming shots and raiders nearly to a stop near your ship.'},
 ];
 
 // ===== SOLAR SYSTEM GENERATION =====
@@ -1115,6 +1135,8 @@ function defaultState(){
     shockwaves:[],
     flakBursts:[],
     solarBeam:null,
+    infinityActive:false,
+    infinityRadius:INFINITY_RADIUS_DEFAULT,
     tradeRaidTimer:30000,
     mothership:null,
     mothershipTimer:70000,
@@ -1228,6 +1250,10 @@ function normalizeState(s){
   if(!Array.isArray(s.shockwaves))s.shockwaves=[];
   if(!Array.isArray(s.flakBursts))s.flakBursts=[];
   s.solarBeam=null;
+  s.infinityActive=!!s.infinityActive;
+  if(typeof s.infinityRadius!=='number'||s.infinityRadius<INFINITY_RADIUS_MIN||s.infinityRadius>INFINITY_RADIUS_MAX){
+    s.infinityRadius=INFINITY_RADIUS_DEFAULT;
+  }
   s.fireHeld=false;
   if(s.tradeRaidTimer===undefined)s.tradeRaidTimer=45000;
   if(s.mothershipTimer===undefined)s.mothershipTimer=70000;
@@ -1323,6 +1349,27 @@ function getLaserCooldown(st=state){return LASER_COOLDOWN*Math.max(0.65,1-resear
 function getWeaponDef(id){return WEAPON_DEFS.find(w=>w.id===(id||(state&&state.activeWeapon)||'laser'))||WEAPON_DEFS[0];}
 function getWeaponDamage(id,st=state){return getWeaponDef(id).damage+researchLevel('weapons',st)*10;}
 function getWeaponCooldown(id,st=state){return getWeaponDef(id).cooldown*Math.max(0.65,1-researchLevel('weapons',st)*0.10);}
+function clampInfinityRadius(radius){
+  const raw=Number(radius);
+  if(!Number.isFinite(raw))return INFINITY_RADIUS_DEFAULT;
+  const snapped=Math.round(raw/INFINITY_RADIUS_STEP)*INFINITY_RADIUS_STEP;
+  return Math.max(INFINITY_RADIUS_MIN,Math.min(INFINITY_RADIUS_MAX,snapped));
+}
+function getInfinityRadius(st=state){
+  return clampInfinityRadius(st&&st.infinityRadius);
+}
+function getInfinityActivateCost(st=state){
+  const t=(getInfinityRadius(st)-INFINITY_RADIUS_MIN)/(INFINITY_RADIUS_MAX-INFINITY_RADIUS_MIN);
+  return Math.round((1.5+t*5.5)*10)/10;
+}
+function infinitySlowFactor(x,y){
+  if(!state||state.activeWeapon!=='infinity'||!state.infinityActive)return 1;
+  const r=getInfinityRadius();
+  const d=Math.hypot(x-state.ship.x,y-state.ship.y);
+  if(d>=r)return 1;
+  const t=Math.max(0,d/r);
+  return Math.max(0.025,t*t);
+}
 function getThrust(st=state){return THRUST*(1+researchLevel('engine',st)*0.12);}
 function getFuelDrain(st=state){return Math.max(0.65,1-researchLevel('engine',st)*0.10);}
 function hasAutoHarvesters(st=state){return researchLevel('harvesters',st)>0;}
@@ -1736,6 +1783,23 @@ function notify(msg,color='var(--accent2)'){
   },2400);
 }
 
+let pendingFreighterCredits=0,freighterCreditTimer=null,freighterCreditHideTimer=null;
+function showFreighterCreditGain(amount){
+  pendingFreighterCredits+=amount;
+  clearTimeout(freighterCreditTimer);
+  freighterCreditTimer=setTimeout(()=>{
+    const el=document.getElementById('freighter-credit-pop');
+    if(!el)return;
+    el.textContent=`+${Math.floor(pendingFreighterCredits)}¢`;
+    pendingFreighterCredits=0;
+    el.classList.remove('show');
+    void el.offsetWidth;
+    el.classList.add('show');
+    clearTimeout(freighterCreditHideTimer);
+    freighterCreditHideTimer=setTimeout(()=>el.classList.remove('show'),1200);
+  },120);
+}
+
 function getMoonPos(moon){
   const parent=state.planets.find(p=>p.id===moon.parentId);
   if(!parent)return{x:0,y:0};
@@ -2014,7 +2078,7 @@ function updateHUD(){
   const systemVal=document.getElementById('system-val');
   if(systemVal)systemVal.textContent=sys?sys.name:'Origin System';
   const weaponVal=document.getElementById('weapon-val');
-  if(weaponVal)weaponVal.textContent=getWeaponDef().name;
+  if(weaponVal)weaponVal.textContent=getWeaponDef().name+(state.activeWeapon==='infinity'&&state.infinityActive?' ON':'');
   const travelBtn=document.getElementById('system-travel-btn');
   if(travelBtn){
     travelBtn.textContent='✦ GALAXY STARMAP';
@@ -2766,19 +2830,35 @@ function updateStationUI(){
     card.className='weapon-card'+(active?' active':'');
     const tag=active?'EQUIPPED':owned?'OWNED':reqOk?`${def.cost}¢`:`${def.requiresFarms} FARMS`;
     const fuel=def.fuelCost?` · ${def.fuelCost} fuel/shot`:'';
-    const food=def.foodPerSec?` · ${def.foodPerSec} food/s while held`:'';
+    const food=def.id==='infinity'?` · ${INFINITY_FOOD_PER_SEC} food/s active · ${getInfinityActivateCost()} food toggle`:def.foodPerSec?` · ${def.foodPerSec} food/s while held`:'';
     const req=def.requiresFarms?`<br>Requires: ${def.requiresFarms} active farms (${countActiveFarms()} ready)`: '';
-    const dmg=def.id==='gravity'?'gravity trap':def.id==='shieldburst'?'engine disable':def.id==='solar'?`${SOLAR_BEAM_BASE_DPS}-${SOLAR_BEAM_MAX_DPS}/s`:`${getWeaponDamage(def.id)}`;
+    const dmg=def.id==='gravity'?'gravity trap':def.id==='shieldburst'?'engine disable':def.id==='solar'?`${SOLAR_BEAM_BASE_DPS}-${SOLAR_BEAM_MAX_DPS}/s`:def.id==='infinity'?`slow field ${getInfinityRadius()}px`:`${getWeaponDamage(def.id)}`;
+    const infinityControls=def.id==='infinity'&&owned?`<div class="weapon-desc infinity-radius-readout" style="margin-top:8px;color:var(--accent)">Radius: ${getInfinityRadius()}px · Activation: ${getInfinityActivateCost()} food</div>
+      <input class="infinity-radius-slider" type="range" min="${INFINITY_RADIUS_MIN}" max="${INFINITY_RADIUS_MAX}" step="${INFINITY_RADIUS_STEP}" value="${getInfinityRadius()}" aria-label="Infinity radius" style="width:100%;margin-top:8px;accent-color:var(--accent)">`:'';
     card.innerHTML=`<div class="weapon-head">
         <div class="weapon-name">${def.name}</div>
         <div class="weapon-tag">${tag}</div>
       </div>
-      <div class="weapon-desc">${def.desc}${req}<br>Damage: ${dmg} · Cooldown: ${Math.round(getWeaponCooldown(def.id))}ms${fuel}${food}</div>
+      <div class="weapon-desc">${def.desc}${req}<br>${def.passive?'Effect':'Damage'}: ${dmg} · Cooldown: ${Math.round(getWeaponCooldown(def.id))}ms${fuel}${food}</div>
       <button class="weapon-btn" ${active||(!owned&&!canBuy)?'disabled':''}>${active?'Equipped':owned?'Equip':'Buy & Equip'}</button>`;
     card.querySelector('button').addEventListener('click',()=>buyOrEquipWeapon(def.id));
+    card.insertAdjacentHTML('beforeend',infinityControls);
+    const slider=card.querySelector('.infinity-radius-slider');
+    if(slider)slider.addEventListener('input',()=>setInfinityRadius(Number(slider.value),true));
     grid.appendChild(card);
   }
 }
+
+window.setInfinityRadius = function(radius,silent=false){
+  if(!state)return;
+  state.infinityRadius=clampInfinityRadius(radius);
+  if(state.infinityActive&&!silent)notify(`∞ Infinity radius adjusted to ${state.infinityRadius}px`, 'var(--accent)');
+  document.querySelectorAll('.infinity-radius-readout').forEach(el=>{
+    el.textContent=`Radius: ${getInfinityRadius()}px · Activation: ${getInfinityActivateCost()} food`;
+  });
+  updateHUD();saveState();
+  if(!silent)updateStationUI();
+};
 
 window.buyOrEquipWeapon = function(id){
   if(!state)return;
@@ -2798,6 +2878,7 @@ window.buyOrEquipWeapon = function(id){
     state.credits-=def.cost;
     state.purchasedWeapons[id]=true;
   }
+  if(state.activeWeapon==='infinity'&&id!=='infinity')state.infinityActive=false;
   state.activeWeapon=id;
   stationMsg(`${def.name} equipped.`,'var(--green)');
   notify(`${def.name} equipped.`,'var(--green)');
@@ -3663,12 +3744,38 @@ function fireShieldBurst(){
   return true;
 }
 
+function toggleInfinity(){
+  if(!state)return false;
+  if(state.infinityActive){
+    state.infinityActive=false;
+    notify('∞ Infinity offline', 'var(--text)');
+    updateHUD();
+    saveState();
+    return true;
+  }
+  const cost=getInfinityActivateCost();
+  if(state.food<cost){
+    notify(`Need ${cost} food to activate Infinity at ${getInfinityRadius()}px.`, 'var(--red)');
+    return false;
+  }
+  state.food=Math.max(0,state.food-cost);
+  state.infinityActive=true;
+  notify(`∞ Infinity active (${getInfinityRadius()}px radius)`, 'var(--accent)');
+  updateHUD();
+  saveState();
+  return true;
+}
+
 function fireLaser(){
   if(!state||!gameRunning||gameOver||gamePaused) return;
   const weaponId=state.activeWeapon||'laser';
   const def=getWeaponDef(weaponId);
   const now = performance.now();
   if(now - (state.lastPlayerShot||0) < getWeaponCooldown(weaponId)) return;
+  if(weaponId==='infinity'){
+    if(toggleInfinity())state.lastPlayerShot=now;
+    return;
+  }
   if(weaponId==='solar'){
     if(state.food<=0){
       notify(`Need food to channel ${def.name}.`,'var(--red)');
@@ -3979,6 +4086,22 @@ function updateSolarBeam(dt){
   }
 }
 
+function updateInfinity(dt){
+  if(!state||!state.infinityActive)return;
+  if(state.activeWeapon!=='infinity'){
+    state.infinityActive=false;
+    return;
+  }
+  const cost=INFINITY_FOOD_PER_SEC*(dt/1000);
+  if(state.food<cost){
+    state.food=0;
+    state.infinityActive=false;
+    notify('∞ Infinity collapsed — food reserves empty.', 'var(--red)');
+    return;
+  }
+  state.food=Math.max(0,state.food-cost);
+}
+
 function updateEnemies(dt, now){
   if(!state) return;
   const s = state.ship;
@@ -4014,9 +4137,17 @@ function updateEnemies(dt, now){
     // or player tried to steal from an enemy planet).
     // Roaming ships are completely passive — they ignore the player.
     const distToPlayer = Math.hypot(s.x-e.x, s.y-e.y);
+    if(state.activeWeapon==='infinity'&&state.infinityActive&&distToPlayer<getInfinityRadius()){
+      if(e.state!=='attack'&&!e._infinityAggroNotified){
+        e._infinityAggroNotified=true;
+        notify('∞ Raider caught in Infinity field — hostile response!', 'var(--red)');
+      }
+      e.state='attack';
+    }
     if((e.disabledUntil||0)>now){
-      e.vx*=0.9;e.vy*=0.9;
-      e.x+=e.vx;e.y+=e.vy;
+      const slow=infinitySlowFactor(e.x,e.y);
+      e.vx*=0.9*slow;e.vy*=0.9*slow;
+      e.x+=e.vx*slow;e.y+=e.vy*slow;
       continue;
     }
 
@@ -4066,7 +4197,9 @@ function updateEnemies(dt, now){
     e.vx *= 0.97; e.vy *= 0.97;
     const espd = Math.hypot(e.vx,e.vy);
     if(espd>6){e.vx=e.vx/espd*6;e.vy=e.vy/espd*6;}
-    e.x += e.vx; e.y += e.vy;
+    const eSlow=infinitySlowFactor(e.x,e.y);
+    if(eSlow<1){e.vx*=eSlow;e.vy*=eSlow;}
+    e.x += e.vx*eSlow; e.y += e.vy*eSlow;
 
     // ── Enemy fires only when actively attacking (retaliate-triggered) ──
     if(e.state==='attack' && distToPlayer < ENEMY_AGGRO_RANGE*0.9){
@@ -4132,7 +4265,8 @@ function updateEnemies(dt, now){
         p.x+=p.vx;p.y+=p.vy;p.vx*=0.985;p.vy*=0.985;p.life--;
       }
     } else {
-      l.x+=l.vx;l.y+=l.vy;l.life--;
+      const slow=l.fromEnemy?infinitySlowFactor(l.x,l.y):1;
+      l.x+=l.vx*slow;l.y+=l.vy*slow;l.life--;
     }
   }
 
@@ -4396,7 +4530,7 @@ function updateTradeRoutes(dt){
         const credits=delivered*TRADE_ROUTE_VALUE;
         state.credits+=credits;
         f.earned=(f.earned||0)+credits;
-        if(Math.random()<0.45)notify(`▣ Freighter delivered ${Math.ceil(delivered)} food: +${Math.floor(credits)}¢`, 'var(--green)');
+        showFreighterCreditGain(credits);
       }
       f.cargo=0;
       f.mode='to_colony';
@@ -4428,8 +4562,9 @@ function updateTradeRoutes(dt){
     const f=freighters.find(fr=>fr.id===r.targetFreighterId&&fr.hp>0);
     if(!f){r.hp=0;continue;}
     if((r.disabledUntil||0)>performance.now()){
-      r.vx*=0.9;r.vy*=0.9;
-      r.x+=r.vx;r.y+=r.vy;
+      const slow=infinitySlowFactor(r.x,r.y);
+      r.vx*=0.9*slow;r.vy*=0.9*slow;
+      r.x+=r.vx*slow;r.y+=r.vy*slow;
       continue;
     }
     const dx=f.x-r.x, dy=f.y-r.y;
@@ -4446,7 +4581,9 @@ function updateTradeRoutes(dt){
     r.vx*=0.975;r.vy*=0.975;
     const sp=Math.hypot(r.vx,r.vy);
     if(sp>5.5){r.vx=r.vx/sp*5.5;r.vy=r.vy/sp*5.5;}
-    r.x+=r.vx;r.y+=r.vy;
+    const rSlow=infinitySlowFactor(r.x,r.y);
+    if(rSlow<1){r.vx*=rSlow;r.vy*=rSlow;}
+    r.x+=r.vx*rSlow;r.y+=r.vy*rSlow;
     if(dist<42){
       r.attackTimer=(r.attackTimer||0)+dt;
       if(r.attackTimer>760){
@@ -4637,6 +4774,7 @@ function update(dt){
   updateVoidEvents(dt);
   applyGravityWells(dt);
   updateSolarBeam(dt);
+  updateInfinity(dt);
 
   if(mouseAimMode){
     // Smoothly snap ship angle toward the mouse cursor in world-space
@@ -5023,6 +5161,19 @@ function draw(){
     ctx.strokeStyle=`rgba(0,180,255,${0.18+shieldFrac*0.35})`;
     ctx.lineWidth=1.5;
     ctx.stroke();
+  }
+  if(state.activeWeapon==='infinity'&&state.infinityActive){
+    const r=getInfinityRadius();
+    const pulse=0.5+Math.sin(state.tick*0.08)*0.5;
+    ctx.save();
+    const g=ctx.createRadialGradient(state.ship.x,state.ship.y,12,state.ship.x,state.ship.y,r);
+    g.addColorStop(0,`rgba(180,245,255,${0.18+0.08*pulse})`);
+    g.addColorStop(0.55,`rgba(0,212,255,${0.08+0.04*pulse})`);
+    g.addColorStop(1,'rgba(0,212,255,0)');
+    ctx.beginPath();ctx.arc(state.ship.x,state.ship.y,r,0,Math.PI*2);ctx.fillStyle=g;ctx.fill();
+    ctx.beginPath();ctx.arc(state.ship.x,state.ship.y,r,0,Math.PI*2);
+    ctx.strokeStyle=`rgba(180,245,255,${0.22+0.12*pulse})`;ctx.lineWidth=1.4;ctx.setLineDash([7,11]);ctx.stroke();ctx.setLineDash([]);
+    ctx.restore();
   }
   drawRamAfterimages(ctx);
   for(const f of (state.freighters||[]))drawFreighter(ctx,f,state.tick);
