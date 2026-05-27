@@ -556,8 +556,8 @@
           <div class="patch-version">v1.14 — Infinity</div>
           <ul class="patch-list">
             <li>Added Infinity as a passive space station weapon</li>
-            <li>Press fire with Infinity equipped to toggle a slowing field around the ship</li>
-            <li>Enemy projectiles and raiders slow dramatically as they approach the field center</li>
+            <li>Press fire with Infinity equipped to toggle a repulsion field around the ship</li>
+            <li>Enemy projectiles and raiders are pushed away when they press into the field</li>
             <li>Infinity radius can be customized with a station slider and higher food activation costs</li>
             <li>Active Infinity drains 0.5 food per second</li>
           </ul>
@@ -968,7 +968,7 @@ const WEAPON_DEFS=[
   {id:'shieldburst',name:'Overcharged Shield Burst',cost:320,cooldown:1400,damage:0,
    desc:'Emergency shockwave. Burns shield or hull energy to clear projectiles and disable nearby raider engines.'},
   {id:'infinity',name:'Infinity',cost:420,cooldown:350,damage:0,passive:true,
-   desc:'Toggle a passive slow field that brings incoming shots and raiders nearly to a stop near your ship.'},
+   desc:'Toggle a passive repulsion field that pushes incoming shots and raiders away from your ship.'},
 ];
 
 // ===== SOLAR SYSTEM GENERATION =====
@@ -1362,13 +1362,28 @@ function getInfinityActivateCost(st=state){
   const t=(getInfinityRadius(st)-INFINITY_RADIUS_MIN)/(INFINITY_RADIUS_MAX-INFINITY_RADIUS_MIN);
   return Math.round((1.5+t*5.5)*10)/10;
 }
-function infinitySlowFactor(x,y){
-  if(!state||state.activeWeapon!=='infinity'||!state.infinityActive)return 1;
+function applyInfinityPush(obj,kind='projectile'){
+  if(!state||state.activeWeapon!=='infinity'||!state.infinityActive||!obj)return false;
   const r=getInfinityRadius();
-  const d=Math.hypot(x-state.ship.x,y-state.ship.y);
-  if(d>=r)return 1;
-  const t=Math.max(0,d/r);
-  return Math.max(0.025,t*t);
+  let dx=obj.x-state.ship.x, dy=obj.y-state.ship.y;
+  let d=Math.hypot(dx,dy);
+  if(d>=r)return false;
+  if(d<0.001){
+    const a=(state.ship.angle||0)+Math.PI;
+    dx=Math.cos(a);dy=Math.sin(a);d=1;
+  }
+  const nx=dx/d, ny=dy/d;
+  const depth=1-d/r;
+  const force=kind==='craft'?0.36+depth*1.45:1.1+depth*3.2;
+  obj.vx=(obj.vx||0)+nx*force;
+  obj.vy=(obj.vy||0)+ny*force;
+  const max=kind==='craft'?7.2:13.5;
+  const sp=Math.hypot(obj.vx,obj.vy);
+  if(sp>max){obj.vx=obj.vx/sp*max;obj.vy=obj.vy/sp*max;}
+  const shove=kind==='craft'?0.8+depth*2.8:2.2+depth*5.2;
+  obj.x+=nx*shove;
+  obj.y+=ny*shove;
+  return true;
 }
 function getThrust(st=state){return THRUST*(1+researchLevel('engine',st)*0.12);}
 function getFuelDrain(st=state){return Math.max(0.65,1-researchLevel('engine',st)*0.10);}
@@ -2832,7 +2847,7 @@ function updateStationUI(){
     const fuel=def.fuelCost?` · ${def.fuelCost} fuel/shot`:'';
     const food=def.id==='infinity'?` · ${INFINITY_FOOD_PER_SEC} food/s active · ${getInfinityActivateCost()} food toggle`:def.foodPerSec?` · ${def.foodPerSec} food/s while held`:'';
     const req=def.requiresFarms?`<br>Requires: ${def.requiresFarms} active farms (${countActiveFarms()} ready)`: '';
-    const dmg=def.id==='gravity'?'gravity trap':def.id==='shieldburst'?'engine disable':def.id==='solar'?`${SOLAR_BEAM_BASE_DPS}-${SOLAR_BEAM_MAX_DPS}/s`:def.id==='infinity'?`slow field ${getInfinityRadius()}px`:`${getWeaponDamage(def.id)}`;
+    const dmg=def.id==='gravity'?'gravity trap':def.id==='shieldburst'?'engine disable':def.id==='solar'?`${SOLAR_BEAM_BASE_DPS}-${SOLAR_BEAM_MAX_DPS}/s`:def.id==='infinity'?`repulsion field ${getInfinityRadius()}px`:`${getWeaponDamage(def.id)}`;
     const infinityControls=def.id==='infinity'&&owned?`<div class="weapon-desc infinity-radius-readout" style="margin-top:8px;color:var(--accent)">Radius: ${getInfinityRadius()}px · Activation: ${getInfinityActivateCost()} food</div>
       <input class="infinity-radius-slider" type="range" min="${INFINITY_RADIUS_MIN}" max="${INFINITY_RADIUS_MAX}" step="${INFINITY_RADIUS_STEP}" value="${getInfinityRadius()}" aria-label="Infinity radius" style="width:100%;margin-top:8px;accent-color:var(--accent)">`:'';
     card.innerHTML=`<div class="weapon-head">
@@ -4145,9 +4160,9 @@ function updateEnemies(dt, now){
       e.state='attack';
     }
     if((e.disabledUntil||0)>now){
-      const slow=infinitySlowFactor(e.x,e.y);
-      e.vx*=0.9*slow;e.vy*=0.9*slow;
-      e.x+=e.vx*slow;e.y+=e.vy*slow;
+      applyInfinityPush(e,'craft');
+      e.vx*=0.9;e.vy*=0.9;
+      e.x+=e.vx;e.y+=e.vy;
       continue;
     }
 
@@ -4197,9 +4212,8 @@ function updateEnemies(dt, now){
     e.vx *= 0.97; e.vy *= 0.97;
     const espd = Math.hypot(e.vx,e.vy);
     if(espd>6){e.vx=e.vx/espd*6;e.vy=e.vy/espd*6;}
-    const eSlow=infinitySlowFactor(e.x,e.y);
-    if(eSlow<1){e.vx*=eSlow;e.vy*=eSlow;}
-    e.x += e.vx*eSlow; e.y += e.vy*eSlow;
+    applyInfinityPush(e,'craft');
+    e.x += e.vx; e.y += e.vy;
 
     // ── Enemy fires only when actively attacking (retaliate-triggered) ──
     if(e.state==='attack' && distToPlayer < ENEMY_AGGRO_RANGE*0.9){
@@ -4265,8 +4279,8 @@ function updateEnemies(dt, now){
         p.x+=p.vx;p.y+=p.vy;p.vx*=0.985;p.vy*=0.985;p.life--;
       }
     } else {
-      const slow=l.fromEnemy?infinitySlowFactor(l.x,l.y):1;
-      l.x+=l.vx*slow;l.y+=l.vy*slow;l.life--;
+      if(l.fromEnemy)applyInfinityPush(l,'projectile');
+      l.x+=l.vx;l.y+=l.vy;l.life--;
     }
   }
 
@@ -4562,9 +4576,9 @@ function updateTradeRoutes(dt){
     const f=freighters.find(fr=>fr.id===r.targetFreighterId&&fr.hp>0);
     if(!f){r.hp=0;continue;}
     if((r.disabledUntil||0)>performance.now()){
-      const slow=infinitySlowFactor(r.x,r.y);
-      r.vx*=0.9*slow;r.vy*=0.9*slow;
-      r.x+=r.vx*slow;r.y+=r.vy*slow;
+      applyInfinityPush(r,'craft');
+      r.vx*=0.9;r.vy*=0.9;
+      r.x+=r.vx;r.y+=r.vy;
       continue;
     }
     const dx=f.x-r.x, dy=f.y-r.y;
@@ -4581,9 +4595,8 @@ function updateTradeRoutes(dt){
     r.vx*=0.975;r.vy*=0.975;
     const sp=Math.hypot(r.vx,r.vy);
     if(sp>5.5){r.vx=r.vx/sp*5.5;r.vy=r.vy/sp*5.5;}
-    const rSlow=infinitySlowFactor(r.x,r.y);
-    if(rSlow<1){r.vx*=rSlow;r.vy*=rSlow;}
-    r.x+=r.vx*rSlow;r.y+=r.vy*rSlow;
+    applyInfinityPush(r,'craft');
+    r.x+=r.vx;r.y+=r.vy;
     if(dist<42){
       r.attackTimer=(r.attackTimer||0)+dt;
       if(r.attackTimer>760){
