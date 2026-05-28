@@ -901,6 +901,7 @@ const SOLAR_BEAM_MAX_DPS = 92;
 const SHIELD_BURST_RADIUS = 260;
 const SHIELD_BURST_DISABLE = 3000;
 const INFINITY_FOOD_PER_SEC = 0.5;
+const TIME_STOP_FOOD_PER_SEC = 5;
 const INFINITY_RADIUS_MIN = 60;
 const INFINITY_RADIUS_MAX = 160;
 const INFINITY_RADIUS_STEP = 5;
@@ -993,6 +994,8 @@ const WEAPON_DEFS=[
    desc:'Emergency shockwave. Burns shield or hull energy to clear projectiles and disable nearby raider engines.'},
   {id:'infinity',name:'Infinity',cost:420,cooldown:350,damage:0,passive:true,
    desc:'Toggle a passive repulsion field that pushes incoming shots and raiders away from your ship.'},
+  {id:'timestop',name:'Time Stop',cost:520,cooldown:500,damage:0,passive:true,
+   desc:'Toggle a temporal lock. Planets, freighters, escorts, raiders, and hostile fire freeze while food burns fast.'},
 ];
 
 function defaultResearchState(){
@@ -1142,6 +1145,8 @@ function defaultState(){
     star:sys.star,
     planets:sys.planets,
     moons:sys.moons,
+    freighters:[],
+    escorts:[],
   }];
   seedGalaxySystems(galaxySystems);
   const homeOrbitR=390, homeAngle=-Math.PI/2;
@@ -1165,6 +1170,9 @@ function defaultState(){
     solarBeam:null,
     infinityActive:false,
     infinityRadius:INFINITY_RADIUS_DEFAULT,
+    timeStopActive:false,
+    pendingTimeStopFuel:0,
+    pendingTimeStopCredits:0,
     tradeRaidTimer:30000,
     mothership:null,
     mothershipTimer:70000,
@@ -1280,6 +1288,10 @@ function normalizeState(s){
   if(!Array.isArray(s.flakBursts))s.flakBursts=[];
   s.solarBeam=null;
   s.infinityActive=!!s.infinityActive;
+  s.timeStopActive=!!s.timeStopActive;
+  if(s.activeWeapon!=='timestop')s.timeStopActive=false;
+  if(typeof s.pendingTimeStopFuel!=='number')s.pendingTimeStopFuel=0;
+  if(typeof s.pendingTimeStopCredits!=='number')s.pendingTimeStopCredits=0;
   if(typeof s.infinityRadius!=='number'||s.infinityRadius<INFINITY_RADIUS_MIN||s.infinityRadius>INFINITY_RADIUS_MAX){
     s.infinityRadius=INFINITY_RADIUS_DEFAULT;
   }
@@ -1356,13 +1368,40 @@ function normalizeState(s){
   });
   seedGalaxySystems(s.galaxySystems);
   s.currentSystemIndex=s.currentSystemIndex||0;
+  s.systems.forEach((sys,i)=>{
+    if(!Array.isArray(sys.freighters)){
+      sys.freighters=i===s.currentSystemIndex?s.freighters:[];
+    }
+    if(!Array.isArray(sys.escorts)){
+      sys.escorts=i===s.currentSystemIndex?s.escorts:[];
+    }
+    sys.freighters.forEach(f=>{
+      if(f.hp===undefined)f.hp=getFreighterMaxHealth(s);
+      if(f.maxHp===undefined||f.maxHp<getFreighterMaxHealth(s))f.maxHp=getFreighterMaxHealth(s);
+      if(f.cargo===undefined)f.cargo=0;
+      if(!f.mode)f.mode='to_colony';
+      if(f.preferredTargetBodyId===undefined)f.preferredTargetBodyId=null;
+      if(f.raidCooldown===undefined)f.raidCooldown=25000;
+    });
+    sys.escorts.forEach(e=>{
+      if(e.id===undefined)e.id=idstr();
+      if(e.hp===undefined)e.hp=getEscortMaxHealth(s);
+      if(e.maxHp===undefined||e.maxHp<getEscortMaxHealth(s))e.maxHp=getEscortMaxHealth(s);
+      if(e.assignedFreighterId===undefined)e.assignedFreighterId=null;
+      if(e.lastShot===undefined)e.lastShot=0;
+    });
+  });
   const cur=s.systems[s.currentSystemIndex]||s.systems[0];
   cur.star=s.star||cur.star;
   cur.planets=s.planets||cur.planets;
   cur.moons=s.moons||cur.moons;
+  if(!Array.isArray(cur.freighters))cur.freighters=[];
+  if(!Array.isArray(cur.escorts))cur.escorts=[];
   s.star=cur.star;
   s.planets=cur.planets;
   s.moons=cur.moons;
+  s.freighters=cur.freighters;
+  s.escorts=cur.escorts;
   const maxHull=getMaxHull(s);
   if(s.playerHp===undefined)s.playerHp=PLAYER_HEALTH;
   s.playerHp=Math.min(s.playerHp,maxHull);
@@ -1439,6 +1478,25 @@ function getShieldBurstRadius(st=state){return SHIELD_BURST_RADIUS+researchLevel
 function getGravityWellRadius(st=state){return GRAVITY_WELL_RADIUS+researchLevel('exoticOrdnance',st)*30;}
 function getSolarBeamMaxDps(st=state){return SOLAR_BEAM_MAX_DPS+researchLevel('exoticOrdnance',st)*15;}
 function getInfinityFoodPerSec(st=state){return INFINITY_FOOD_PER_SEC*Math.max(0.55,1-researchLevel('exoticOrdnance',st)*0.15);}
+function getTimeStopFoodPerSec(){return TIME_STOP_FOOD_PER_SEC;}
+function isTimeStopped(){return !!(state&&state.activeWeapon==='timestop'&&state.timeStopActive);}
+function releasePendingTimeStopFuel(){
+  if(!state)return 0;
+  const pendingFuel=state.pendingTimeStopFuel||0;
+  const pendingCredits=state.pendingTimeStopCredits||0;
+  if(pendingFuel>0){
+    state.fuel=Math.min(getMaxFuel(),state.fuel+pendingFuel);
+    state.pendingTimeStopFuel=0;
+  }
+  if(pendingCredits>0){
+    state.credits+=pendingCredits;
+    state.pendingTimeStopCredits=0;
+  }
+  if(pendingFuel>0||pendingCredits>0){
+    notify(`⏱ Stored Black Flash rewards released: +${Math.round(pendingFuel)} fuel${pendingCredits?` +${Math.round(pendingCredits)}¢`:''}`, 'var(--fuel-color)');
+  }
+  return pendingFuel;
+}
 function countLabs(){
   if(!state)return 0;
   let labs=0;
@@ -1492,6 +1550,8 @@ function syncActiveSystem(){
     state.systems[idx].star=state.star;
     state.systems[idx].planets=state.planets;
     state.systems[idx].moons=state.moons;
+    state.systems[idx].freighters=state.freighters||[];
+    state.systems[idx].escorts=state.escorts||[];
   }
 }
 
@@ -1528,6 +1588,8 @@ function ensureSystemForNode(node){
     star:sys.star,
     planets:sys.planets,
     moons:sys.moons,
+    freighters:[],
+    escorts:[],
   });
   node.systemIndex=idx;
   node.visited=true;
@@ -1544,6 +1606,10 @@ function enterSystem(idx,arrivalLabel){
   state.star=sys.star;
   state.planets=sys.planets;
   state.moons=sys.moons;
+  if(!Array.isArray(sys.freighters))sys.freighters=[];
+  if(!Array.isArray(sys.escorts))sys.escorts=[];
+  state.freighters=sys.freighters;
+  state.escorts=sys.escorts;
   const anchor=state.planets.find(p=>p.name==='Homeworld'||p.name==='Frontier Gate')||state.planets[0];
   const ax=anchor?anchor.x:390;
   const ay=anchor?anchor.y:-390;
@@ -1562,15 +1628,7 @@ function enterSystem(idx,arrivalLabel){
   state.solarBeam=null;
   state.mothership=null;
   state.mothershipTimer=65000;
-  const hub=getTradeHubPos();
-  for(const f of (state.freighters||[])){
-    f.x=hub.x+rnd(-28,28);f.y=hub.y+rnd(-28,28);
-    f.vx=0;f.vy=0;f.mode='to_colony';f.targetBodyId=null;f.cargo=0;f.underAttack=false;
-  }
-  for(const e of (state.escorts||[])){
-    e.x=hub.x+rnd(-36,36);e.y=hub.y+rnd(-36,36);
-    e.vx=0;e.vy=0;e.hp=e.maxHp||getEscortMaxHealth();
-  }
+  for(const f of (state.freighters||[]))f.underAttack=false;
   state.playerLasers=[];
   state.enemyLasers=[];
   state.ramEffects=[];
@@ -2149,7 +2207,10 @@ function updateHUD(){
   const systemVal=document.getElementById('system-val');
   if(systemVal)systemVal.textContent=sys?sys.name:'Origin System';
   const weaponVal=document.getElementById('weapon-val');
-  if(weaponVal)weaponVal.textContent=getWeaponDef().name+(state.activeWeapon==='infinity'&&state.infinityActive?' ON':'');
+  if(weaponVal){
+    const activeSuffix=(state.activeWeapon==='infinity'&&state.infinityActive)||(state.activeWeapon==='timestop'&&state.timeStopActive)?' ON':'';
+    weaponVal.textContent=getWeaponDef().name+activeSuffix;
+  }
   const travelBtn=document.getElementById('system-travel-btn');
   if(travelBtn){
     travelBtn.textContent='✦ GALAXY STARMAP';
@@ -2901,9 +2962,9 @@ function updateStationUI(){
     card.className='weapon-card'+(active?' active':'');
     const tag=active?'EQUIPPED':owned?'OWNED':reqOk?`${def.cost}¢`:`${def.requiresFarms} FARMS`;
     const fuel=def.fuelCost?` · ${def.fuelCost} fuel/shot`:'';
-    const food=def.id==='infinity'?` · ${getInfinityFoodPerSec().toFixed(2)} food/s active · ${getInfinityActivateCost()} food toggle`:def.foodPerSec?` · ${def.foodPerSec} food/s while held`:'';
+    const food=def.id==='infinity'?` · ${getInfinityFoodPerSec().toFixed(2)} food/s active · ${getInfinityActivateCost()} food toggle`:def.id==='timestop'?` · ${getTimeStopFoodPerSec()} food/s active`:def.foodPerSec?` · ${def.foodPerSec} food/s while held`:'';
     const req=def.requiresFarms?`<br>Requires: ${def.requiresFarms} active farms (${countActiveFarms()} ready)`: '';
-    const dmg=def.id==='gravity'?`gravity trap ${getGravityWellRadius()}px`:def.id==='shieldburst'?`engine disable ${getShieldBurstRadius()}px`:def.id==='solar'?`${SOLAR_BEAM_BASE_DPS}-${getSolarBeamMaxDps()}/s`:def.id==='infinity'?`repulsion field ${getInfinityRadius()}px`:`${getWeaponDamage(def.id)}`;
+    const dmg=def.id==='gravity'?`gravity trap ${getGravityWellRadius()}px`:def.id==='shieldburst'?`engine disable ${getShieldBurstRadius()}px`:def.id==='solar'?`${SOLAR_BEAM_BASE_DPS}-${getSolarBeamMaxDps()}/s`:def.id==='infinity'?`repulsion field ${getInfinityRadius()}px`:def.id==='timestop'?'temporal freeze':`${getWeaponDamage(def.id)}`;
     const infinityControls=def.id==='infinity'&&owned?`<div class="weapon-desc infinity-radius-readout" style="margin-top:8px;color:var(--accent)">Radius: ${getInfinityRadius()}px · Activation: ${getInfinityActivateCost()} food</div>
       <input class="infinity-radius-slider" type="range" min="${INFINITY_RADIUS_MIN}" max="${INFINITY_RADIUS_MAX}" step="${INFINITY_RADIUS_STEP}" value="${getInfinityRadius()}" aria-label="Infinity radius" style="width:100%;margin-top:8px;accent-color:var(--accent)">`:'';
     card.innerHTML=`<div class="weapon-head">
@@ -2950,6 +3011,10 @@ window.buyOrEquipWeapon = function(id){
     state.purchasedWeapons[id]=true;
   }
   if(state.activeWeapon==='infinity'&&id!=='infinity')state.infinityActive=false;
+  if(state.activeWeapon==='timestop'&&id!=='timestop'){
+    state.timeStopActive=false;
+    releasePendingTimeStopFuel();
+  }
   state.activeWeapon=id;
   stationMsg(`${def.name} equipped.`,'var(--green)');
   notify(`${def.name} equipped.`,'var(--green)');
@@ -3841,6 +3906,27 @@ function toggleInfinity(){
   return true;
 }
 
+function toggleTimeStop(){
+  if(!state)return false;
+  if(state.timeStopActive){
+    state.timeStopActive=false;
+    releasePendingTimeStopFuel();
+    notify('⏱ Time Stop released', 'var(--text)');
+    updateHUD();
+    saveState();
+    return true;
+  }
+  if(state.food<=0){
+    notify(`Need food to activate Time Stop (${getTimeStopFoodPerSec()} food/s).`, 'var(--red)');
+    return false;
+  }
+  state.timeStopActive=true;
+  notify(`⏱ Time Stop active — ${getTimeStopFoodPerSec()} food/s drain`, 'var(--accent)');
+  updateHUD();
+  saveState();
+  return true;
+}
+
 function fireLaser(){
   if(!state||!gameRunning||gameOver||gamePaused) return;
   const weaponId=state.activeWeapon||'laser';
@@ -3849,6 +3935,10 @@ function fireLaser(){
   if(now - (state.lastPlayerShot||0) < getWeaponCooldown(weaponId)) return;
   if(weaponId==='infinity'){
     if(toggleInfinity())state.lastPlayerShot=now;
+    return;
+  }
+  if(weaponId==='timestop'){
+    if(toggleTimeStop())state.lastPlayerShot=now;
     return;
   }
   if(weaponId==='solar'){
@@ -4023,10 +4113,15 @@ function triggerBlackFlash(target,kind){
   state.hitStopTimer=Math.max(state.hitStopTimer||0,DIVERGENT_RAM_HITSTOP);
   state.screenShake=Math.max(state.screenShake||0,16);
   state.ramCooldown=DIVERGENT_RAM_COOLDOWN;
-  state.fuel=Math.max(0,state.fuel-DIVERGENT_RAM_FUEL_COST);
+  const fuelReward=Math.max(0,-DIVERGENT_RAM_FUEL_COST);
+  if(isTimeStopped()&&fuelReward>0){
+    state.pendingTimeStopFuel=(state.pendingTimeStopFuel||0)+fuelReward;
+  } else {
+    state.fuel=Math.max(0,state.fuel-DIVERGENT_RAM_FUEL_COST);
+  }
   target.hp-=DIVERGENT_RAM_DAMAGE;
   if(kind==='enemy')target.state='attack';
-  notify('BLACK FLASH — Divergent Ram!', '#ff2d55');
+  notify(isTimeStopped()?'BLACK FLASH — fuel reward held in stopped time!':'BLACK FLASH — Divergent Ram!', '#ff2d55');
 }
 
 function markBlackFlashWitnesses(destroyed){
@@ -4064,9 +4159,13 @@ function resolveRamTarget(target,kind){
     if(target.hp<=0&&!target._bountyPaid){
       target._bountyPaid=true;
       if(kind==='enemy')markBlackFlashWitnesses(target);
-      state.credits+=kind==='enemy'?40:30;
+      const bounty=kind==='enemy'?40:30;
+      if(isTimeStopped())state.pendingTimeStopCredits=(state.pendingTimeStopCredits||0)+bounty;
+      else state.credits+=bounty;
       state.raidersDestroyedSession=(state.raidersDestroyedSession||0)+1;
-      notify(`BLACK FLASH vaporized ${kind==='enemy'?'enemy':'escort raider'}! +${kind==='enemy'?40:30}¢`, '#ff2d55');
+      notify(isTimeStopped()
+        ?`BLACK FLASH vaporized ${kind==='enemy'?'enemy':'escort raider'}! Rewards held until time resumes`
+        :`BLACK FLASH vaporized ${kind==='enemy'?'enemy':'escort raider'}! +${bounty}¢`, '#ff2d55');
     }
   } else if((target.lastCollisionHit||0)+850<performance.now()){
     target.lastCollisionHit=performance.now();
@@ -4172,6 +4271,24 @@ function updateInfinity(dt){
     state.food=0;
     state.infinityActive=false;
     notify('∞ Infinity collapsed — food reserves empty.', 'var(--red)');
+    return;
+  }
+  state.food=Math.max(0,state.food-cost);
+}
+
+function updateTimeStop(dt){
+  if(!state||!state.timeStopActive)return;
+  if(state.activeWeapon!=='timestop'){
+    state.timeStopActive=false;
+    releasePendingTimeStopFuel();
+    return;
+  }
+  const cost=getTimeStopFoodPerSec()*(dt/1000);
+  if(state.food<cost){
+    state.food=0;
+    state.timeStopActive=false;
+    releasePendingTimeStopFuel();
+    notify('⏱ Time Stop collapsed — food reserves empty.', 'var(--red)');
     return;
   }
   state.food=Math.max(0,state.food-cost);
@@ -4827,11 +4944,13 @@ function update(dt){
   const now=performance.now();
   state.ramEffects=(state.ramEffects||[]).filter(e=>now-e.created<e.life);
   state.shipAfterimages=(state.shipAfterimages||[]).filter(a=>now-a.created<a.life);
+  updateTimeStop(dt);
+  const timeStopped=isTimeStopped();
 
   // Advance planet orbits — capture delta first for co-movement
   for(const p of state.planets){
     const oldX=p.x, oldY=p.y;
-    p.orbitAngle+=p.orbitSpeed*dt;
+    if(!timeStopped)p.orbitAngle+=p.orbitSpeed*dt;
     p.x=Math.cos(p.orbitAngle)*p.orbitRadius;
     p.y=Math.sin(p.orbitAngle)*p.orbitRadius;
     p._dx=p.x-oldX; p._dy=p.y-oldY;
@@ -4839,17 +4958,19 @@ function update(dt){
   // Advance moon orbits — capture delta too
   for(const m of state.moons){
     m._prevAngle=m.orbitAngle;
-    m.orbitAngle+=m.orbitSpeed*dt;
+    if(!timeStopped)m.orbitAngle+=m.orbitSpeed*dt;
   }
 
-  tickBuilding(dt);
-  updateEnemies(dt, performance.now());
-  updateTradeRoutes(dt);
-  updateEscorts(dt, performance.now());
-  updateMothership(dt);
-  updateVoidEvents(dt);
-  applyGravityWells(dt);
-  updateSolarBeam(dt);
+  if(!timeStopped){
+    tickBuilding(dt);
+    updateEnemies(dt, performance.now());
+    updateTradeRoutes(dt);
+    updateEscorts(dt, performance.now());
+    updateMothership(dt);
+    updateVoidEvents(dt);
+    applyGravityWells(dt);
+    updateSolarBeam(dt);
+  }
   updateInfinity(dt);
 
   if(mouseAimMode){
@@ -4966,91 +5087,93 @@ function update(dt){
   state.lastImpact=lastImpact;
 
   const allB=[...state.planets,...state.moons];
-  // Food from farms — automated harvesters remove the ship range requirement.
-  const HARVEST_RANGE = PROXIMITY * 2.5;
-  let totalHarvested = 0;
-  for(const b of allB){
-    if(!b.colonized)continue;
-    const bpos=b.isMoon?getMoonPos(b):{x:b.x,y:b.y};
-    const nearEnough=Math.hypot(bpos.x-s.x,bpos.y-s.y)-b.radius < HARVEST_RANGE;
-    if(!nearEnough&&!hasAutoHarvesters())continue;
-    for(const sl of b.slots){
-      if(sl==='farm'){
-        const gained = FOOD_RATE * (1+researchLevel('colonialNetwork')*0.25) * sec;
-        totalHarvested += gained;
+  if(!timeStopped){
+    // Food from farms — automated harvesters remove the ship range requirement.
+    const HARVEST_RANGE = PROXIMITY * 2.5;
+    let totalHarvested = 0;
+    for(const b of allB){
+      if(!b.colonized)continue;
+      const bpos=b.isMoon?getMoonPos(b):{x:b.x,y:b.y};
+      const nearEnough=Math.hypot(bpos.x-s.x,bpos.y-s.y)-b.radius < HARVEST_RANGE;
+      if(!nearEnough&&!hasAutoHarvesters())continue;
+      for(const sl of b.slots){
+        if(sl==='farm'){
+          const gained = FOOD_RATE * (1+researchLevel('colonialNetwork')*0.25) * sec;
+          totalHarvested += gained;
+        }
       }
     }
-  }
-  // Split harvest: sell ratio goes to credits, rest goes to food supply
-  if(totalHarvested > 0){
-    const soldAmount  = totalHarvested * state.foodSellRatio;
-    const storedAmount = totalHarvested * (1 - state.foodSellRatio);
-    state.credits += soldAmount * state.foodPrice;
-    state.food = Math.min(getMaxFood(), state.food + storedAmount);
-  }
-  // Passive human consumption — always ticking down
-  const rawConsume = FOOD_CONSUMPTION * sec;
-  state.food = Math.max(0, state.food - rawConsume);
-  if(state.food<=0&&state.tick%180===0) notify('⚠ No food supply!','var(--red)');
-
-  // Food price fluctuation — changes every 60 seconds
-  state.priceTimer = (state.priceTimer||0) + dt;
-  const PRICE_INTERVAL = 60000;
-  if(state.priceTimer >= PRICE_INTERVAL){
-    state.priceTimer -= PRICE_INTERVAL;
-    const drift = (2.0 - state.foodPrice) * 0.3;
-    const noise = (Math.random() - 0.5) * 2.5;
-    state.foodPrice = Math.max(0.3, Math.min(8.0, state.foodPrice + drift + noise));
-    state.foodPrice = Math.round(state.foodPrice * 100) / 100;
-    state.priceHistory = [...(state.priceHistory||[]), state.foodPrice].slice(-12);
-    const dir = state.priceHistory.length>1 && state.foodPrice > state.priceHistory[state.priceHistory.length-2];
-    notify(`📈 Food price: ${state.foodPrice.toFixed(2)}¢/unit ${dir?'▲':'▼'}`, dir?'var(--green)':'var(--red)');
-  }
-
-  // Solar Bond price fluctuation — changes every 30 seconds
-  state.bondTimer = (state.bondTimer||0) + dt;
-  const BOND_INTERVAL = 30000;
-  if(state.bondTimer >= BOND_INTERVAL){
-    state.bondTimer -= BOND_INTERVAL;
-    const prevBond = state.bondPrice||10;
-    // More volatile than food: bigger swings, weak mean reversion toward 10
-    const bdrift = (10 - prevBond) * 0.1;
-    // Occasional spike/crash events
-    const eventRoll = Math.random();
-    const shock = eventRoll < 0.08 ? (Math.random()*8+4) :
-                  eventRoll < 0.16 ? -(Math.random()*8+4) : 0;
-    const bnoise = (Math.random()-0.5)*5 + shock;
-    state.bondPrice = Math.max(0.5, Math.min(50, prevBond + bdrift + bnoise));
-    state.bondPrice = Math.round(state.bondPrice * 100) / 100;
-    state.bondHistory = [...(state.bondHistory||[prevBond]), state.bondPrice].slice(-20);
-    const bup = state.bondPrice > prevBond;
-    if(Math.abs(state.bondPrice - prevBond) > 3){
-      notify(`📊 Solar Bond: ${state.bondPrice.toFixed(2)}¢ ${bup?'▲ SURGE':'▼ CRASH'}`, bup?'var(--green)':'var(--red)');
-    } else {
-      notify(`📊 Solar Bond: ${state.bondPrice.toFixed(2)}¢ ${bup?'▲':'▼'}`, bup?'var(--green)':'var(--red)');
+    // Split harvest: sell ratio goes to credits, rest goes to food supply
+    if(totalHarvested > 0){
+      const soldAmount  = totalHarvested * state.foodSellRatio;
+      const storedAmount = totalHarvested * (1 - state.foodSellRatio);
+      state.credits += soldAmount * state.foodPrice;
+      state.food = Math.min(getMaxFood(), state.food + storedAmount);
     }
-    if(document.getElementById('bonds-screen').classList.contains('open')) updateBondsUI();
-  }
-  // Refuel
-  for(const b of allB){
-    if(!b.colonized)continue;
-    const bpos=b.isMoon?getMoonPos(b):{x:b.x,y:b.y};
-    const dist=Math.hypot(bpos.x-s.x,bpos.y-s.y)-b.radius;
-    if(dist<PROXIMITY*0.8){
-      const fm=b.slots.filter(sl=>sl==='fuel').length;
-      if(fm>0){
-        const fn=FUEL_GEN_FOOD_COST*fm*sec;
-        if(state.food>=fn){
-          const prev=state.fuel;
-          state.fuel=Math.min(getMaxFuel(),state.fuel+FUEL_REFUEL_RATE*fm*sec);
-          state.food=Math.max(0,state.food-fn);
-          if(Math.floor(state.fuel)!==Math.floor(prev)&&state.fuel>=getMaxFuel()-0.5&&prev<getMaxFuel()-1)
-            notify('⚡ Fuel tank full!','var(--fuel-color)');
-        } else if(state.food>0){
-          const pf=state.food/(FUEL_GEN_FOOD_COST*sec);
-          state.fuel=Math.min(getMaxFuel(),state.fuel+FUEL_REFUEL_RATE*pf*sec);
-          state.food=0;
-          notify('⚠ Not enough food to refuel!','var(--red)');
+    // Passive human consumption — always ticking down
+    const rawConsume = FOOD_CONSUMPTION * sec;
+    state.food = Math.max(0, state.food - rawConsume);
+    if(state.food<=0&&state.tick%180===0) notify('⚠ No food supply!','var(--red)');
+
+    // Food price fluctuation — changes every 60 seconds
+    state.priceTimer = (state.priceTimer||0) + dt;
+    const PRICE_INTERVAL = 60000;
+    if(state.priceTimer >= PRICE_INTERVAL){
+      state.priceTimer -= PRICE_INTERVAL;
+      const drift = (2.0 - state.foodPrice) * 0.3;
+      const noise = (Math.random() - 0.5) * 2.5;
+      state.foodPrice = Math.max(0.3, Math.min(8.0, state.foodPrice + drift + noise));
+      state.foodPrice = Math.round(state.foodPrice * 100) / 100;
+      state.priceHistory = [...(state.priceHistory||[]), state.foodPrice].slice(-12);
+      const dir = state.priceHistory.length>1 && state.foodPrice > state.priceHistory[state.priceHistory.length-2];
+      notify(`📈 Food price: ${state.foodPrice.toFixed(2)}¢/unit ${dir?'▲':'▼'}`, dir?'var(--green)':'var(--red)');
+    }
+
+    // Solar Bond price fluctuation — changes every 30 seconds
+    state.bondTimer = (state.bondTimer||0) + dt;
+    const BOND_INTERVAL = 30000;
+    if(state.bondTimer >= BOND_INTERVAL){
+      state.bondTimer -= BOND_INTERVAL;
+      const prevBond = state.bondPrice||10;
+      // More volatile than food: bigger swings, weak mean reversion toward 10
+      const bdrift = (10 - prevBond) * 0.1;
+      // Occasional spike/crash events
+      const eventRoll = Math.random();
+      const shock = eventRoll < 0.08 ? (Math.random()*8+4) :
+                    eventRoll < 0.16 ? -(Math.random()*8+4) : 0;
+      const bnoise = (Math.random()-0.5)*5 + shock;
+      state.bondPrice = Math.max(0.5, Math.min(50, prevBond + bdrift + bnoise));
+      state.bondPrice = Math.round(state.bondPrice * 100) / 100;
+      state.bondHistory = [...(state.bondHistory||[prevBond]), state.bondPrice].slice(-20);
+      const bup = state.bondPrice > prevBond;
+      if(Math.abs(state.bondPrice - prevBond) > 3){
+        notify(`📊 Solar Bond: ${state.bondPrice.toFixed(2)}¢ ${bup?'▲ SURGE':'▼ CRASH'}`, bup?'var(--green)':'var(--red)');
+      } else {
+        notify(`📊 Solar Bond: ${state.bondPrice.toFixed(2)}¢ ${bup?'▲':'▼'}`, bup?'var(--green)':'var(--red)');
+      }
+      if(document.getElementById('bonds-screen').classList.contains('open')) updateBondsUI();
+    }
+    // Refuel
+    for(const b of allB){
+      if(!b.colonized)continue;
+      const bpos=b.isMoon?getMoonPos(b):{x:b.x,y:b.y};
+      const dist=Math.hypot(bpos.x-s.x,bpos.y-s.y)-b.radius;
+      if(dist<PROXIMITY*0.8){
+        const fm=b.slots.filter(sl=>sl==='fuel').length;
+        if(fm>0){
+          const fn=FUEL_GEN_FOOD_COST*fm*sec;
+          if(state.food>=fn){
+            const prev=state.fuel;
+            state.fuel=Math.min(getMaxFuel(),state.fuel+FUEL_REFUEL_RATE*fm*sec);
+            state.food=Math.max(0,state.food-fn);
+            if(Math.floor(state.fuel)!==Math.floor(prev)&&state.fuel>=getMaxFuel()-0.5&&prev<getMaxFuel()-1)
+              notify('⚡ Fuel tank full!','var(--fuel-color)');
+          } else if(state.food>0){
+            const pf=state.food/(FUEL_GEN_FOOD_COST*sec);
+            state.fuel=Math.min(getMaxFuel(),state.fuel+FUEL_REFUEL_RATE*pf*sec);
+            state.food=0;
+            notify('⚠ Not enough food to refuel!','var(--red)');
+          }
         }
       }
     }
@@ -5249,6 +5372,16 @@ function draw(){
     ctx.beginPath();ctx.arc(state.ship.x,state.ship.y,r,0,Math.PI*2);ctx.fillStyle=g;ctx.fill();
     ctx.beginPath();ctx.arc(state.ship.x,state.ship.y,r,0,Math.PI*2);
     ctx.strokeStyle=`rgba(180,245,255,${0.22+0.12*pulse})`;ctx.lineWidth=1.4;ctx.setLineDash([7,11]);ctx.stroke();ctx.setLineDash([]);
+    ctx.restore();
+  }
+  if(isTimeStopped()){
+    const pulse=0.5+Math.sin(state.tick*0.1)*0.5;
+    ctx.save();
+    ctx.fillStyle=`rgba(180,245,255,${0.05+0.04*pulse})`;
+    ctx.fillRect(-camX,-camY,W,H);
+    ctx.beginPath();ctx.arc(state.ship.x,state.ship.y,120+18*pulse,0,Math.PI*2);
+    ctx.strokeStyle=`rgba(255,255,255,${0.18+0.14*pulse})`;
+    ctx.lineWidth=1.2;ctx.setLineDash([2,12]);ctx.stroke();ctx.setLineDash([]);
     ctx.restore();
   }
   drawRamAfterimages(ctx);
