@@ -196,6 +196,8 @@
   .tech-tier:last-child{margin-bottom:0;}
   .tech-tier.tier-0{grid-template-columns:1fr 1fr;}
   .tech-tier.tier-1{grid-template-columns:1fr 1fr 1fr;}
+  .tech-tier.tier-2{grid-template-columns:1fr 1fr 1fr 1fr;}
+  .tech-tier.tier-3{grid-template-columns:1fr 1fr;}
   .tech-tier::before{content:'';position:absolute;left:12%;right:12%;top:-14px;border-top:1px solid rgba(0,212,255,0.28);}
   .tech-tier.tier-0::before{display:none;}
   .research-card{position:relative;border:1px solid var(--border);background:rgba(255,255,255,0.03);padding:10px;min-height:118px;}
@@ -270,7 +272,7 @@
     #galaxy-info{border-left:none;border-top:1px solid var(--border);}
     #galaxy-footer span{display:none;}
     .tech-tree{min-width:unset;}
-    .tech-tier,.tech-tier.tier-0,.tech-tier.tier-1{grid-template-columns:1fr;}
+    .tech-tier,.tech-tier.tier-0,.tech-tier.tier-1,.tech-tier.tier-2,.tech-tier.tier-3{grid-template-columns:1fr;}
     .tech-tier::before{left:50%;right:auto;top:-18px;height:18px;border-top:none;border-left:1px solid rgba(0,212,255,0.28);}
     .weapon-grid{max-height:min(416px,52vh);}
     .controls-box{min-width:unset;width:90vw;padding:12px 16px;}
@@ -552,6 +554,14 @@
     <div class="overlay-title">PATCH NOTES</div>
     <div class="overlay-box">
       <div class="patch-scroll">
+        <div class="patch-entry">
+          <div class="patch-version">v1.15 — Expanded Research Tree</div>
+          <ul class="patch-list">
+            <li>Added tier-2 and tier-3 Laboratory technologies for logistics, construction, jump travel, shields, and exotic weapons</li>
+            <li>New research can expand fuel and food capacity, reduce build and jump costs, improve freighters, and strengthen advanced weapons</li>
+            <li>Older saves automatically receive default levels for the new technologies</li>
+          </ul>
+        </div>
         <div class="patch-entry">
           <div class="patch-version">v1.14 — Infinity</div>
           <ul class="patch-list">
@@ -950,6 +960,20 @@ const RESEARCH_DEFS=[
    desc:l=>`Laser damage +${(l+1)*10} and cooldown -${(l+1)*10}%.`},
   {id:'shielding',name:'Shielding',tier:1,requires:{id:'hull',level:1},max:3,costs:[{credits:120,food:45},{credits:190,food:75},{credits:280,food:120}],
    desc:l=>`Adds a recharging shield with ${[30,50,75][l]} capacity.`},
+  {id:'orbitalLogistics',name:'Orbital Logistics',tier:2,requires:{id:'harvesters',level:1},max:2,costs:[{credits:260,food:130},{credits:420,food:190}],
+   desc:l=>`Food storage +${(l+1)*75}, freighter cargo +${(l+1)*6}, and route value +${((l+1)*0.4).toFixed(1)}¢.`},
+  {id:'rapidAssembly',name:'Rapid Assembly',tier:2,requires:{id:'hull',level:2},max:2,costs:[{credits:240,food:115},{credits:380,food:190}],
+   desc:l=>`Colony/module costs -${(l+1)*10}% and module build time -${(l+1)*15}%.`},
+  {id:'jumpCalibration',name:'Jump Calibration',tier:2,requires:{id:'engine',level:3},max:2,costs:[{credits:300,food:150},{credits:480,food:195}],
+   desc:l=>`Fuel tank +${(l+1)*25} and galaxy jump costs -${(l+1)*15}%.`},
+  {id:'aegisMatrix',name:'Aegis Matrix',tier:2,requires:{id:'shielding',level:3},max:2,costs:[{credits:320,food:170},{credits:520,food:200}],
+   desc:l=>`Shield capacity +${(l+1)*18}, recharge +${(l+1)*35}%, and shield burst radius +${(l+1)*35}px.`},
+  {id:'exoticOrdnance',name:'Exotic Ordnance',tier:2,requires:{id:'weapons',level:3},max:2,costs:[{credits:340,food:160},{credits:560,food:200}],
+   desc:l=>`Weapon damage +${(l+1)*8}, gravity wells +${(l+1)*30}px, beam cap +${(l+1)*15}/s, and Infinity upkeep -${(l+1)*15}%.`},
+  {id:'colonialNetwork',name:'Colonial Network',tier:3,requires:{id:'orbitalLogistics',level:2},max:1,costs:[{credits:700,food:200}],
+   desc:()=>`All farm output +25%, trade raider ambushes slow down, and freighters gain reinforced hulls.`},
+  {id:'voidArchitecture',name:'Void Architecture',tier:3,requires:{id:'rapidAssembly',level:2},max:1,costs:[{credits:760,food:200}],
+   desc:()=>`Labs boost shield recharge, modules finish faster, and new colonies start with a small food grant.`},
 ];
 
 const WEAPON_DEFS=[
@@ -970,6 +994,10 @@ const WEAPON_DEFS=[
   {id:'infinity',name:'Infinity',cost:420,cooldown:350,damage:0,passive:true,
    desc:'Toggle a passive repulsion field that pushes incoming shots and raiders away from your ship.'},
 ];
+
+function defaultResearchState(){
+  return Object.fromEntries(RESEARCH_DEFS.map(def=>[def.id,0]));
+}
 
 // ===== SOLAR SYSTEM GENERATION =====
 const STAR_CONFIGS=[
@@ -1123,7 +1151,7 @@ function defaultState(){
     playerHp:PLAYER_HEALTH,
     playerShield:0,
     lastShieldHit:0,
-    research:{engine:0,harvesters:0,shielding:0,weapons:0,hull:0},
+    research:defaultResearchState(),
     activeWeapon:'laser',
     purchasedWeapons:{laser:true},
     enemies:[],
@@ -1178,9 +1206,10 @@ function saveState(){try{syncActiveSystem();localStorage.setItem(SAVE_KEY,JSON.s
 function galaxyDistance(x,y){return Math.max(0,Math.hypot(x,y)/GALAXY_DISTANCE_UNIT);}
 function galaxyCostFor(node){
   const d=Math.max(0,node&&node.distance||0);
+  const discount=Math.max(0.55,1-researchLevel('jumpCalibration')*0.15);
   return {
-    credits:Math.ceil(SYSTEM_TRAVEL_COST*d),
-    fuel:Math.ceil(SYSTEM_TRAVEL_FUEL*d),
+    credits:Math.ceil(SYSTEM_TRAVEL_COST*d*discount),
+    fuel:Math.ceil(SYSTEM_TRAVEL_FUEL*d*discount),
     multiplier:Math.max(1,Math.round((1+d)*100)/100),
   };
 }
@@ -1233,7 +1262,7 @@ function expandGalaxyNear(node){
 }
 
 function normalizeState(s){
-  s.research={engine:0,harvesters:0,shielding:0,weapons:0,hull:0,...(s.research||{})};
+  s.research={...defaultResearchState(),...(s.research||{})};
   s.activeWeapon=s.activeWeapon||'laser';
   s.purchasedWeapons={laser:true,...(s.purchasedWeapons||{})};
   if(!WEAPON_DEFS.some(w=>w.id===s.activeWeapon))s.activeWeapon='laser';
@@ -1267,16 +1296,16 @@ function normalizeState(s){
   if(!Array.isArray(s.shipTrail))s.shipTrail=[];
   if(s.hitStopTimer===undefined)s.hitStopTimer=0;
   s.freighters.forEach(f=>{
-    if(f.hp===undefined)f.hp=FREIGHTER_HEALTH;
-    if(f.maxHp===undefined)f.maxHp=FREIGHTER_HEALTH;
+    if(f.hp===undefined)f.hp=getFreighterMaxHealth(s);
+    if(f.maxHp===undefined||f.maxHp<getFreighterMaxHealth(s))f.maxHp=getFreighterMaxHealth(s);
     if(f.cargo===undefined)f.cargo=0;
     if(!f.mode)f.mode='to_colony';
     if(f.preferredTargetBodyId===undefined)f.preferredTargetBodyId=null;
   });
   s.escorts.forEach(e=>{
     if(e.id===undefined)e.id=idstr();
-    if(e.hp===undefined)e.hp=ESCORT_CRAFT_HEALTH;
-    if(e.maxHp===undefined)e.maxHp=ESCORT_CRAFT_HEALTH;
+    if(e.hp===undefined)e.hp=getEscortMaxHealth(s);
+    if(e.maxHp===undefined||e.maxHp<getEscortMaxHealth(s))e.maxHp=getEscortMaxHealth(s);
     if(e.assignedFreighterId===undefined)e.assignedFreighterId=null;
     if(e.lastShot===undefined)e.lastShot=0;
   });
@@ -1338,16 +1367,24 @@ function normalizeState(s){
   if(s.playerHp===undefined)s.playerHp=PLAYER_HEALTH;
   s.playerHp=Math.min(s.playerHp,maxHull);
   s.playerShield=Math.min(s.playerShield,getMaxShield(s));
+  s.fuel=Math.min(s.fuel===undefined?getMaxFuel(s):s.fuel,getMaxFuel(s));
+  s.food=Math.min(s.food===undefined?0:s.food,getMaxFood(s));
   return s;
 }
 
 function researchLevel(id,st=state){return st&&st.research&&st.research[id]||0;}
+function getMaxFuel(st=state){return MAX_FUEL+researchLevel('jumpCalibration',st)*25;}
+function getMaxFood(st=state){return MAX_FOOD+researchLevel('orbitalLogistics',st)*75;}
 function getMaxHull(st=state){return PLAYER_HEALTH+researchLevel('hull',st)*25;}
-function getMaxShield(st=state){return [0,30,50,75][researchLevel('shielding',st)]||0;}
-function getLaserDamage(st=state){return LASER_DAMAGE+researchLevel('weapons',st)*10;}
+function getMaxShield(st=state){
+  const base=[0,30,50,75][researchLevel('shielding',st)]||0;
+  return base+researchLevel('aegisMatrix',st)*18;
+}
+function getWeaponBonus(st=state){return researchLevel('weapons',st)*10+researchLevel('exoticOrdnance',st)*8;}
+function getLaserDamage(st=state){return LASER_DAMAGE+getWeaponBonus(st);}
 function getLaserCooldown(st=state){return LASER_COOLDOWN*Math.max(0.65,1-researchLevel('weapons',st)*0.10);}
 function getWeaponDef(id){return WEAPON_DEFS.find(w=>w.id===(id||(state&&state.activeWeapon)||'laser'))||WEAPON_DEFS[0];}
-function getWeaponDamage(id,st=state){return getWeaponDef(id).damage+researchLevel('weapons',st)*10;}
+function getWeaponDamage(id,st=state){return getWeaponDef(id).damage+getWeaponBonus(st);}
 function getWeaponCooldown(id,st=state){return getWeaponDef(id).cooldown*Math.max(0.65,1-researchLevel('weapons',st)*0.10);}
 function clampInfinityRadius(radius){
   const raw=Number(radius);
@@ -1360,7 +1397,8 @@ function getInfinityRadius(st=state){
 }
 function getInfinityActivateCost(st=state){
   const t=(getInfinityRadius(st)-INFINITY_RADIUS_MIN)/(INFINITY_RADIUS_MAX-INFINITY_RADIUS_MIN);
-  return Math.round((1.5+t*5.5)*10)/10;
+  const discount=1-researchLevel('exoticOrdnance',st)*0.15;
+  return Math.round((1.5+t*5.5)*discount*10)/10;
 }
 function applyInfinityPush(obj,kind='projectile'){
   if(!state||state.activeWeapon!=='infinity'||!state.infinityActive||!obj)return false;
@@ -1388,6 +1426,19 @@ function applyInfinityPush(obj,kind='projectile'){
 function getThrust(st=state){return THRUST*(1+researchLevel('engine',st)*0.12);}
 function getFuelDrain(st=state){return Math.max(0.65,1-researchLevel('engine',st)*0.10);}
 function hasAutoHarvesters(st=state){return researchLevel('harvesters',st)>0;}
+function getBuildTime(base,st=state){
+  const speedup=researchLevel('rapidAssembly',st)*0.15+researchLevel('voidArchitecture',st)*0.15;
+  return Math.max(base*0.45,Math.round(base*(1-speedup)));
+}
+function getFreighterCapacity(st=state){return FREIGHTER_CAPACITY+researchLevel('orbitalLogistics',st)*6;}
+function getTradeRouteValue(st=state){return TRADE_ROUTE_VALUE+researchLevel('orbitalLogistics',st)*0.4;}
+function getFreighterMaxHealth(st=state){return FREIGHTER_HEALTH+researchLevel('colonialNetwork',st)*35;}
+function getEscortMaxHealth(st=state){return ESCORT_CRAFT_HEALTH+researchLevel('colonialNetwork',st)*20;}
+function getShieldRechargeRate(st=state){return (4+researchLevel('shielding',st)*2)*(1+researchLevel('aegisMatrix',st)*0.35+countLabs()*researchLevel('voidArchitecture',st)*0.08);}
+function getShieldBurstRadius(st=state){return SHIELD_BURST_RADIUS+researchLevel('aegisMatrix',st)*35;}
+function getGravityWellRadius(st=state){return GRAVITY_WELL_RADIUS+researchLevel('exoticOrdnance',st)*30;}
+function getSolarBeamMaxDps(st=state){return SOLAR_BEAM_MAX_DPS+researchLevel('exoticOrdnance',st)*15;}
+function getInfinityFoodPerSec(st=state){return INFINITY_FOOD_PER_SEC*Math.max(0.55,1-researchLevel('exoticOrdnance',st)*0.15);}
 function countLabs(){
   if(!state)return 0;
   let labs=0;
@@ -1451,7 +1502,8 @@ function currentSystem(){
 
 function systemCost(base){
   const sys=currentSystem();
-  return Math.ceil(base*(sys&&sys.costMultiplier||1));
+  const discount=Math.max(0.65,1-researchLevel('rapidAssembly')*0.10);
+  return Math.ceil(base*(sys&&sys.costMultiplier||1)*discount);
 }
 
 function currentGalaxyNode(){
@@ -1517,7 +1569,7 @@ function enterSystem(idx,arrivalLabel){
   }
   for(const e of (state.escorts||[])){
     e.x=hub.x+rnd(-36,36);e.y=hub.y+rnd(-36,36);
-    e.vx=0;e.vy=0;e.hp=e.maxHp||ESCORT_CRAFT_HEALTH;
+    e.vx=0;e.vy=0;e.hp=e.maxHp||getEscortMaxHealth();
   }
   state.playerLasers=[];
   state.enemyLasers=[];
@@ -1972,17 +2024,18 @@ function showSlotMenu(body,idx){
   const div=panelSlots.children[idx];
   const cr=state?Math.floor(state.credits):0;
   const farmCost=systemCost(COST_FARM), fuelCost=systemCost(COST_FUEL), labCost=systemCost(COST_LAB);
+  const farmTime=getBuildTime(BUILD_TIME_FARM)/1000, fuelTime=getBuildTime(BUILD_TIME_FUEL)/1000, labTime=getBuildTime(BUILD_TIME_LAB)/1000;
   const canFarm=cr>=farmCost, canFuel=cr>=fuelCost, canLab=cr>=labCost;
   div.innerHTML=`<div style="width:100%">
     <button onclick="assignSlot('farm',${idx})" ${canFarm?'':'disabled'}
       style="width:100%;margin-bottom:4px;padding:5px 8px;background:rgba(57,255,20,${canFarm?'0.1':'0.03'});border:1px solid ${canFarm?'var(--green)':'#333'};color:${canFarm?'var(--green)':'#555'};font-size:10px;cursor:${canFarm?'pointer':'not-allowed'};font-family:inherit;text-align:left">
-      🌾 Farm <span style="opacity:0.6;font-size:9px">${farmCost}¢ · ${BUILD_TIME_FARM/1000}s · +food/s</span></button>
+      🌾 Farm <span style="opacity:0.6;font-size:9px">${farmCost}¢ · ${farmTime}s · +food/s</span></button>
     <button onclick="assignSlot('fuel',${idx})" ${canFuel?'':'disabled'}
       style="width:100%;margin-bottom:4px;padding:5px 8px;background:rgba(255,107,53,${canFuel?'0.1':'0.03'});border:1px solid ${canFuel?'var(--fuel-color)':'#333'};color:${canFuel?'var(--fuel-color)':'#555'};font-size:10px;cursor:${canFuel?'pointer':'not-allowed'};font-family:inherit;text-align:left">
-      ⚡ Fuel Gen <span style="opacity:0.6;font-size:9px">${fuelCost}¢ · ${BUILD_TIME_FUEL/1000}s · costs food</span></button>
+      ⚡ Fuel Gen <span style="opacity:0.6;font-size:9px">${fuelCost}¢ · ${fuelTime}s · costs food</span></button>
     <button onclick="assignSlot('lab',${idx})" ${canLab?'':'disabled'}
       style="width:100%;padding:5px 8px;background:rgba(0,212,255,${canLab?'0.1':'0.03'});border:1px solid ${canLab?'var(--accent)':'#333'};color:${canLab?'var(--accent)':'#555'};font-size:10px;cursor:${canLab?'pointer':'not-allowed'};font-family:inherit;text-align:left">
-      🔬 Laboratory <span style="opacity:0.6;font-size:9px">${labCost}¢ · ${BUILD_TIME_LAB/1000}s · research</span></button>
+      🔬 Laboratory <span style="opacity:0.6;font-size:9px">${labCost}¢ · ${labTime}s · research</span></button>
     <div style="font-size:9px;color:var(--yellow);margin-top:5px;text-align:right">Your credits: ${cr}¢</div>
   </div>`;
 }
@@ -1992,7 +2045,7 @@ window.assignSlot=function(type,idx){
   const cost=type==='farm'?systemCost(COST_FARM):type==='fuel'?systemCost(COST_FUEL):systemCost(COST_LAB);
   if(state.credits<cost){notify(`Need ${cost}¢ — only ${Math.floor(state.credits)}¢ available`,'var(--red)');return;}
   state.credits-=cost;
-  const bt=type==='farm'?BUILD_TIME_FARM:type==='fuel'?BUILD_TIME_FUEL:BUILD_TIME_LAB;
+  const bt=getBuildTime(type==='farm'?BUILD_TIME_FARM:type==='fuel'?BUILD_TIME_FUEL:BUILD_TIME_LAB);
   activePlanet.slots[idx]={type,progress:0,total:bt};
   renderSlots(activePlanet);updateHUD();
   const label=type==='farm'?'🌾 Farm':type==='fuel'?'⚡ Fuel Gen':'🔬 Laboratory';
@@ -2007,6 +2060,7 @@ btnColonize.addEventListener('click',()=>{
   if(state.credits<cost){notify(`Need ${cost}¢ to colonize — only ${Math.floor(state.credits)}¢ available`,'var(--red)');return;}
   state.credits-=cost;
   activePlanet.colonized=true;
+  if(researchLevel('voidArchitecture')>0)state.food=Math.min(getMaxFood(),state.food+25);
   btnColonize.style.display='none';
   renderSlots(activePlanet);updateHUD();
   notify(`🚀 ${activePlanet.name} colonized! (-${cost}¢)`,'var(--accent)');
@@ -2067,10 +2121,12 @@ function interactNearest(){
 
 function updateHUD(){
   if(!state)return;
-  const fp=(state.fuel/MAX_FUEL)*100;
-  const fdp=Math.min((state.food/MAX_FOOD)*100,100);
-  document.getElementById('fuel-val').textContent=Math.ceil(state.fuel);
-  document.getElementById('food-val').textContent=Math.ceil(state.food);
+  const maxFuel=getMaxFuel();
+  const maxFood=getMaxFood();
+  const fp=(state.fuel/maxFuel)*100;
+  const fdp=Math.min((state.food/maxFood)*100,100);
+  document.getElementById('fuel-val').textContent=`${Math.ceil(state.fuel)} / ${maxFuel}`;
+  document.getElementById('food-val').textContent=`${Math.ceil(state.food)} / ${maxFood}`;
   document.getElementById('fuel-bar').style.width=fp+'%';
   document.getElementById('food-bar').style.width=fdp+'%';
   let col=0,fms=0,gms=0,lms=0;
@@ -2845,9 +2901,9 @@ function updateStationUI(){
     card.className='weapon-card'+(active?' active':'');
     const tag=active?'EQUIPPED':owned?'OWNED':reqOk?`${def.cost}¢`:`${def.requiresFarms} FARMS`;
     const fuel=def.fuelCost?` · ${def.fuelCost} fuel/shot`:'';
-    const food=def.id==='infinity'?` · ${INFINITY_FOOD_PER_SEC} food/s active · ${getInfinityActivateCost()} food toggle`:def.foodPerSec?` · ${def.foodPerSec} food/s while held`:'';
+    const food=def.id==='infinity'?` · ${getInfinityFoodPerSec().toFixed(2)} food/s active · ${getInfinityActivateCost()} food toggle`:def.foodPerSec?` · ${def.foodPerSec} food/s while held`:'';
     const req=def.requiresFarms?`<br>Requires: ${def.requiresFarms} active farms (${countActiveFarms()} ready)`: '';
-    const dmg=def.id==='gravity'?'gravity trap':def.id==='shieldburst'?'engine disable':def.id==='solar'?`${SOLAR_BEAM_BASE_DPS}-${SOLAR_BEAM_MAX_DPS}/s`:def.id==='infinity'?`repulsion field ${getInfinityRadius()}px`:`${getWeaponDamage(def.id)}`;
+    const dmg=def.id==='gravity'?`gravity trap ${getGravityWellRadius()}px`:def.id==='shieldburst'?`engine disable ${getShieldBurstRadius()}px`:def.id==='solar'?`${SOLAR_BEAM_BASE_DPS}-${getSolarBeamMaxDps()}/s`:def.id==='infinity'?`repulsion field ${getInfinityRadius()}px`:`${getWeaponDamage(def.id)}`;
     const infinityControls=def.id==='infinity'&&owned?`<div class="weapon-desc infinity-radius-readout" style="margin-top:8px;color:var(--accent)">Radius: ${getInfinityRadius()}px · Activation: ${getInfinityActivateCost()} food</div>
       <input class="infinity-radius-slider" type="range" min="${INFINITY_RADIUS_MIN}" max="${INFINITY_RADIUS_MAX}" step="${INFINITY_RADIUS_STEP}" value="${getInfinityRadius()}" aria-label="Infinity radius" style="width:100%;margin-top:8px;accent-color:var(--accent)">`:'';
     card.innerHTML=`<div class="weapon-head">
@@ -2967,7 +3023,7 @@ function updateTradeUI(){
         Route: ${target?target.name:'Seeking farm colony'} ↔ Central Hub<br>
         Assigned: ${assigned&&eligible.includes(assigned)?assigned.name:'Auto'}<br>
         Status: <span style="color:${f.underAttack?'var(--red)':'var(--text-bright)'}">${freighterStatusLabel(f)}</span><br>
-        Escorts: ${escortCount} · Cargo: ${Math.ceil(f.cargo||0)} / ${FREIGHTER_CAPACITY} food · Earned: ${Math.floor(f.earned||0)}¢
+        Escorts: ${escortCount} · Cargo: ${Math.ceil(f.cargo||0)} / ${getFreighterCapacity()} food · Earned: ${Math.floor(f.earned||0)}¢
       </div>`;
     const select=document.createElement('select');
     select.className='trade-route-select';
@@ -3087,7 +3143,7 @@ window.buyEscortCraft = function(){
     id:idstr(),
     x:hub.x+rnd(-26,26),y:hub.y+rnd(-26,26),
     vx:0,vy:0,angle:-Math.PI/2,
-    hp:ESCORT_CRAFT_HEALTH,maxHp:ESCORT_CRAFT_HEALTH,
+    hp:getEscortMaxHealth(),maxHp:getEscortMaxHealth(),
     assignedFreighterId:firstFreighter?firstFreighter.id:null,
     lastShot:0,
   });
@@ -3109,7 +3165,7 @@ window.buyFreighter = function(){
     id:idstr(),
     x:hub.x+rnd(-20,20),y:hub.y+rnd(-20,20),
     vx:0,vy:0,angle:-Math.PI/2,
-    hp:FREIGHTER_HEALTH,maxHp:FREIGHTER_HEALTH,
+    hp:getFreighterMaxHealth(),maxHp:getFreighterMaxHealth(),
     cargo:0,mode:'to_colony',targetBodyId:null,
     preferredTargetBodyId:null,earned:0,underAttack:false,raidCooldown:25000,
   });
@@ -3160,7 +3216,7 @@ function researchPrereqLabel(def){
 
 function updateResearchUI(){
   if(!state)return;
-  if(!state.research)state.research={engine:0,harvesters:0,shielding:0,weapons:0,hull:0};
+  if(!state.research)state.research=defaultResearchState();
   const labs=countLabs();
   document.getElementById('research-reserves').textContent=`${Math.floor(state.credits)}¢ + ${Math.floor(state.food)} food · Labs online: ${labs}`;
   const grid=document.getElementById('research-grid');
@@ -3215,7 +3271,10 @@ window.buyResearch = function(id){
     const curHp=state.playerHp===undefined?PLAYER_HEALTH:state.playerHp;
     state.playerHp=Math.min(getMaxHull(),curHp+25);
   }
+  if(id==='jumpCalibration')state.fuel=Math.min(getMaxFuel(),state.fuel+25);
+  if(id==='orbitalLogistics')state.food=Math.min(getMaxFood(),state.food+75);
   if(id==='shielding')state.playerShield=getMaxShield();
+  if(id==='aegisMatrix')state.playerShield=getMaxShield();
   researchMsg(`${def.name} upgraded to level ${lvl+1}.`,'var(--green)');
   updateResearchUI();updateHUD();saveState();
 };
@@ -3741,19 +3800,20 @@ function fireShieldBurst(){
   if(shieldDrain>0)state.playerShield=0;
   else state.playerHp=Math.max(maxHull*0.5,state.playerHp-18);
   const s=state.ship;
-  state.enemyLasers=(state.enemyLasers||[]).filter(l=>Math.hypot(l.x-s.x,l.y-s.y)>SHIELD_BURST_RADIUS);
+  const radius=getShieldBurstRadius();
+  state.enemyLasers=(state.enemyLasers||[]).filter(l=>Math.hypot(l.x-s.x,l.y-s.y)>radius);
   const until=performance.now()+SHIELD_BURST_DISABLE;
   for(const e of (state.enemies||[])){
-    if(Math.hypot(e.x-s.x,e.y-s.y)<SHIELD_BURST_RADIUS){
+    if(Math.hypot(e.x-s.x,e.y-s.y)<radius){
       e.disabledUntil=until;e.vx*=0.2;e.vy*=0.2;e.state='attack';
     }
   }
   for(const r of (state.tradeRaiders||[])){
-    if(Math.hypot(r.x-s.x,r.y-s.y)<SHIELD_BURST_RADIUS){
+    if(Math.hypot(r.x-s.x,r.y-s.y)<radius){
       r.disabledUntil=until;r.vx*=0.2;r.vy*=0.2;
     }
   }
-  state.shockwaves.push({x:s.x,y:s.y,radius:20,maxRadius:SHIELD_BURST_RADIUS,life:28,maxLife:28});
+  state.shockwaves.push({x:s.x,y:s.y,radius:20,maxRadius:radius,life:28,maxLife:28});
   state.screenShake=Math.max(state.screenShake||0,10);
   notify('🛡 Overcharged shield burst fired!', 'var(--accent)');
   return true;
@@ -4027,7 +4087,7 @@ function resolveRamCollisions(){
 }
 
 function spawnGravityWell(x,y){
-  state.gravityWells.push({x,y,radius:32,maxRadius:GRAVITY_WELL_RADIUS,life:GRAVITY_WELL_DURATION,total:GRAVITY_WELL_DURATION});
+  state.gravityWells.push({x,y,radius:32,maxRadius:getGravityWellRadius(),life:GRAVITY_WELL_DURATION,total:GRAVITY_WELL_DURATION});
   state.screenShake=Math.max(state.screenShake||0,6);
   notify('● Gravity well armed — raiders snared', '#9b4dff');
 }
@@ -4092,7 +4152,7 @@ function updateSolarBeam(dt){
     const same=beam.target===lock.target&&beam.kind===lock.kind;
     beam.charge=same?Math.min(1,beam.charge+sec*0.55):0.08;
     beam.target=lock.target;beam.kind=lock.kind;beam.x=lock.x;beam.y=lock.y;
-    const dps=SOLAR_BEAM_BASE_DPS+(SOLAR_BEAM_MAX_DPS-SOLAR_BEAM_BASE_DPS)*beam.charge;
+    const dps=SOLAR_BEAM_BASE_DPS+(getSolarBeamMaxDps()-SOLAR_BEAM_BASE_DPS)*beam.charge;
     damageTarget(lock.target,lock.kind,dps*sec);
   } else {
     beam.target=null;beam.kind=null;beam.charge=Math.max(0,beam.charge-sec*0.8);
@@ -4107,7 +4167,7 @@ function updateInfinity(dt){
     state.infinityActive=false;
     return;
   }
-  const cost=INFINITY_FOOD_PER_SEC*(dt/1000);
+  const cost=getInfinityFoodPerSec()*(dt/1000);
   if(state.food<cost){
     state.food=0;
     state.infinityActive=false;
@@ -4437,6 +4497,7 @@ function updateEscorts(dt,now){
   state.escorts=(state.escorts||[]).filter(e=>e.hp>0);
 
   for(const e of state.escorts){
+    if(e.maxHp<getEscortMaxHealth())e.maxHp=getEscortMaxHealth();
     const f=freighters.find(fr=>fr.id===e.assignedFreighterId&&fr.hp>0);
     const threats=f?(state.tradeRaiders||[]).filter(r=>r.hp>0&&r.targetFreighterId===f.id):[];
     const target=threats.length?threats.reduce((best,r)=>{
@@ -4512,6 +4573,7 @@ function updateTradeRoutes(dt){
 
   for(const f of freighters){
     if(f.hp<=0)continue;
+    if(f.maxHp<getFreighterMaxHealth())f.maxHp=getFreighterMaxHealth();
     f.raidCooldown=Math.max(0,(f.raidCooldown||0)-dt);
     if(!eligible.length){
       f.mode='idle';
@@ -4541,7 +4603,7 @@ function updateTradeRoutes(dt){
     } else if(f.mode==='to_hub'){
       const delivered=f.cargo||0;
       if(delivered>0){
-        const credits=delivered*TRADE_ROUTE_VALUE;
+        const credits=delivered*getTradeRouteValue();
         state.credits+=credits;
         f.earned=(f.earned||0)+credits;
         showFreighterCreditGain(credits);
@@ -4551,7 +4613,7 @@ function updateTradeRoutes(dt){
       const next=chooseFreighterTarget(f);
       if(next)f.targetBodyId=next.id;
     } else {
-      f.cargo=FREIGHTER_CAPACITY;
+      f.cargo=getFreighterCapacity();
       f.mode='to_hub';
     }
     f.vx*=0.985;f.vy*=0.985;
@@ -4563,7 +4625,8 @@ function updateTradeRoutes(dt){
   state.tradeRaidTimer=(state.tradeRaidTimer||0)+dt;
   const activeTargeted=new Set((state.tradeRaiders||[]).map(r=>r.targetFreighterId));
   const raidCandidates=freighters.filter(f=>f.hp>0&&f.cargo>0&&f.raidCooldown<=0&&!activeTargeted.has(f.id));
-  if(state.tradeRaidTimer>=TRADE_RAID_INTERVAL&&raidCandidates.length){
+  const raidInterval=TRADE_RAID_INTERVAL*(1+researchLevel('colonialNetwork')*0.35);
+  if(state.tradeRaidTimer>=raidInterval&&raidCandidates.length){
     state.tradeRaidTimer=0;
     const f=raidCandidates[Math.floor(Math.random()*raidCandidates.length)];
     f.raidCooldown=65000;
@@ -4913,7 +4976,7 @@ function update(dt){
     if(!nearEnough&&!hasAutoHarvesters())continue;
     for(const sl of b.slots){
       if(sl==='farm'){
-        const gained = FOOD_RATE * sec;
+        const gained = FOOD_RATE * (1+researchLevel('colonialNetwork')*0.25) * sec;
         totalHarvested += gained;
       }
     }
@@ -4923,7 +4986,7 @@ function update(dt){
     const soldAmount  = totalHarvested * state.foodSellRatio;
     const storedAmount = totalHarvested * (1 - state.foodSellRatio);
     state.credits += soldAmount * state.foodPrice;
-    state.food = Math.min(MAX_FOOD, state.food + storedAmount);
+    state.food = Math.min(getMaxFood(), state.food + storedAmount);
   }
   // Passive human consumption — always ticking down
   const rawConsume = FOOD_CONSUMPTION * sec;
@@ -4979,13 +5042,13 @@ function update(dt){
         const fn=FUEL_GEN_FOOD_COST*fm*sec;
         if(state.food>=fn){
           const prev=state.fuel;
-          state.fuel=Math.min(MAX_FUEL,state.fuel+FUEL_REFUEL_RATE*fm*sec);
+          state.fuel=Math.min(getMaxFuel(),state.fuel+FUEL_REFUEL_RATE*fm*sec);
           state.food=Math.max(0,state.food-fn);
-          if(Math.floor(state.fuel)!==Math.floor(prev)&&state.fuel>=MAX_FUEL-0.5&&prev<MAX_FUEL-1)
+          if(Math.floor(state.fuel)!==Math.floor(prev)&&state.fuel>=getMaxFuel()-0.5&&prev<getMaxFuel()-1)
             notify('⚡ Fuel tank full!','var(--fuel-color)');
         } else if(state.food>0){
           const pf=state.food/(FUEL_GEN_FOOD_COST*sec);
-          state.fuel=Math.min(MAX_FUEL,state.fuel+FUEL_REFUEL_RATE*pf*sec);
+          state.fuel=Math.min(getMaxFuel(),state.fuel+FUEL_REFUEL_RATE*pf*sec);
           state.food=0;
           notify('⚠ Not enough food to refuel!','var(--red)');
         }
@@ -5002,7 +5065,7 @@ function update(dt){
   }
   const maxShield=getMaxShield();
   if(maxShield>0&&(performance.now()-(state.lastShieldHit||0)>2500)){
-    state.playerShield=Math.min(maxShield,(state.playerShield||0)+(4+researchLevel('shielding')*2)*sec);
+    state.playerShield=Math.min(maxShield,(state.playerShield||0)+getShieldRechargeRate()*sec);
   } else if(maxShield<=0){
     state.playerShield=0;
   }

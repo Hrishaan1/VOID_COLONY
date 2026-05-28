@@ -33,16 +33,17 @@ In **VOID COLONY**, you command a lone colony ship in a dynamic solar system. Ba
 * **Layered Rendering:** Uses dual HTML5 Canvases to handle high-frequency physics updates and background star-fields separately.
 
 ## Patch Notes
-- **Future Update - Infinity**
-    - A new passive type weapon that slows down all projectiles (to almost a full stop) when they are within a certain radius of you
-        - The radius can be customized by the player, at the cost of higher cost to activate infinity with higher radii
-    - Will cost 0.5 food per second that it is active
-    - Pressing the shoot key will toggle infinity
 - **Future Update - Baby Mode**
     - Much easier for people who are bad at the game
     - weapons instant kill raiders
     - black flash cannot be missed
-    - Everything is cheaper, and you gain more money from all income sources 
+    - Everything is cheaper, and you gain more money from all income sources
+- **v1.14 - Infinity**
+    - Added Infinity as a passive space station weapon
+    - Press fire with Infinity equipped to toggle a repulsion field around the ship
+    - Enemy projectiles and raiders are pushed away when they press into the field
+    - Infinity radius can be customized with a station slider and higher food activation costs
+    - Active Infinity drains 0.5 food per second
 - **v1.13 - Advanced Weapon Systems**
     - Added Gravity Well Launcher, Kinetic Flak Cannon, Solar Beam Overdrive, and Overcharged Shield Burst
     - Gravity wells pull nearby raiders into a temporary trap for easier Divergent Ram setups
