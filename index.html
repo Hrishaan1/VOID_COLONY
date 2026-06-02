@@ -555,25 +555,6 @@
     <div class="overlay-box">
       <div class="patch-scroll">
         <div class="patch-entry">
-          <div class="patch-version">v1.17 — Fleet Admiral Ship</div>
-          <ul class="patch-list">
-            <li>Added the Fleet Admiral Ship as a new high-threat boss encounter with a warning and warp-in effect</li>
-            <li>The Fleet Admiral is larger than the Leviathan, uses dark gold command-ship trim, and hunts the most populated colony</li>
-            <li>Carrier Inbound opens hangar bays every 20 seconds and launches 2-3 enemy raiders</li>
-            <li>Laser Strike locks onto the player, shows a red targeting warning, then fires a continuous high-damage beam</li>
-            <li>Infinity blocks the admiral laser, causing the beam to stop, distort, and split at the barrier perimeter</li>
-          </ul>
-        </div>
-        <div class="patch-entry">
-          <div class="patch-version">v1.16 — Time Stop</div>
-          <ul class="patch-list">
-            <li>Added Time Stop as a late-game passive station weapon</li>
-            <li>Press fire with Time Stop equipped to freeze planets, freighters, escorts, raiders, and hostile fire</li>
-            <li>Time Stop consumes food rapidly while active and collapses when reserves run out</li>
-            <li>Black Flash rewards gained during stopped time are held and released when time resumes</li>
-          </ul>
-        </div>
-        <div class="patch-entry">
           <div class="patch-version">v1.15 — Expanded Research Tree</div>
           <ul class="patch-list">
             <li>Added tier-2 and tier-3 Laboratory technologies for logistics, construction, jump travel, shields, and exotic weapons</li>
@@ -808,7 +789,7 @@
 
   <!-- MOTHERSHIP NEGOTIATION -->
   <div class="overlay-screen" id="mothership-screen">
-    <div class="overlay-title" id="mothership-title">LEVIATHAN DIPLOMACY</div>
+    <div class="overlay-title">LEVIATHAN DIPLOMACY</div>
     <div class="overlay-box" style="min-width:min(520px,92vw)">
       <div class="dialogue-line" id="mothership-line"></div>
       <div style="font-size:10px;color:var(--text);line-height:1.6">
@@ -925,9 +906,6 @@ const INFINITY_RADIUS_MIN = 60;
 const INFINITY_RADIUS_MAX = 160;
 const INFINITY_RADIUS_STEP = 5;
 const INFINITY_RADIUS_DEFAULT = 95;
-const INFINITY_PLANET_PIN_RADIUS = 15;
-const INFINITY_PLANET_PIN_BASE_DPS = 10;
-const INFINITY_PLANET_PIN_MAX_DPS = 72;
 const VOID_EVENT_INTERVAL = 70000;
 const SOLAR_FLARE_DURATION = 18000;
 const COMET_DOCK_RANGE = 46;
@@ -957,7 +935,6 @@ const FAILED_RAM_DAMAGE = 15;
 const MOTHERSHIP_CHECK_INTERVAL = 115000;
 const MOTHERSHIP_SPAWN_CHANCE = 0.38;
 const MOTHERSHIP_INTERACT_RANGE = 155;
-const FLEET_ADMIRAL_INTERACT_RANGE = 230;
 const MOTHERSHIP_DRAIN_RANGE = 720;
 const MOTHERSHIP_DRAIN_FOOD = 0.28;
 const MOTHERSHIP_DRAIN_CREDITS = 0.08;
@@ -966,21 +943,6 @@ const MOTHERSHIP_RAM_DAMAGE = 150;
 const MOTHERSHIP_RAM_SPEED = 7.2;
 const BLACK_FLASH_WITNESS_RANGE = 560;
 const BLACK_FLASH_REVENGE_DELAY = 15000;
-const FLEET_ADMIRAL_CHECK_INTERVAL = 135000;
-const FLEET_ADMIRAL_WARNING_DELAY = 4500;
-const FLEET_ADMIRAL_HEALTH = 900;
-const FLEET_ADMIRAL_SPEED = 0.035;
-const FLEET_ADMIRAL_CARRIER_CD = 20000;
-const FLEET_ADMIRAL_CARRIER_HALT = 2000;
-const FLEET_ADMIRAL_LASER_CD = 15000;
-const FLEET_ADMIRAL_LASER_LOCK = 1500;
-const FLEET_ADMIRAL_LASER_FIRE = 2000;
-const FLEET_ADMIRAL_LASER_DAMAGE = 18;
-const FLEET_ADMIRAL_RAM_DAMAGE = 220;
-const FLEET_ADMIRAL_RAM_SPEED = 7.8;
-const FLEET_ADMIRAL_BRIBE = 2000;
-const FLEET_ADMIRAL_INTIMIDATE_KILLS = 300;
-const FLEET_ADMIRAL_MODULE_TRIBUTE = 4;
 
 // ==== GALAXY TRAVEL CONSTANTS ====
 const SYSTEM_TRAVEL_COST = 100;   // credits per home-distance unit
@@ -1214,8 +1176,6 @@ function defaultState(){
     tradeRaidTimer:30000,
     mothership:null,
     mothershipTimer:70000,
-    fleetAdmiral:null,
-    fleetAdmiralTimer:90000,
     raidersDestroyedSession:0,
     buildingHistory:[],
     rewindPending:false,
@@ -1339,9 +1299,6 @@ function normalizeState(s){
   if(s.tradeRaidTimer===undefined)s.tradeRaidTimer=45000;
   if(s.mothershipTimer===undefined)s.mothershipTimer=70000;
   if(s.mothership===undefined)s.mothership=null;
-  if(s.fleetAdmiralTimer===undefined)s.fleetAdmiralTimer=90000;
-  if(s.fleetAdmiral===undefined)s.fleetAdmiral=null;
-  if(s.fleetAdmiralWarningAt===undefined)s.fleetAdmiralWarningAt=0;
   if(s.raidersDestroyedSession===undefined)s.raidersDestroyedSession=0;
   if(!Array.isArray(s.buildingHistory))s.buildingHistory=[];
   if(s.rewindPending===undefined)s.rewindPending=false;
@@ -1503,58 +1460,6 @@ function applyInfinityPush(obj,kind='projectile'){
   const shove=kind==='craft'?0.8+depth*2.8:2.2+depth*5.2;
   obj.x+=nx*shove;
   obj.y+=ny*shove;
-  return true;
-}
-function resolveInfinityPlanetPin(target,kind,dt){
-  if(!target)return false;
-  if(!state||state.activeWeapon!=='infinity'||!state.infinityActive||target.hp<=0){
-    target._infinityPlanetPin=null;
-    return false;
-  }
-  const pressureX=target.x-state.ship.x, pressureY=target.y-state.ship.y;
-  const pressureDist=Math.hypot(pressureX,pressureY);
-  if(pressureDist>getInfinityRadius()+INFINITY_PLANET_PIN_RADIUS||pressureDist<0.001){
-    target._infinityPlanetPin=null;
-    return false;
-  }
-
-  let best=null;
-  for(const body of [...state.planets,...state.moons]){
-    const bp=bodyPos(body);
-    const dx=target.x-bp.x, dy=target.y-bp.y;
-    const dist=Math.hypot(dx,dy);
-    if(dist<0.001)continue;
-    const minDist=body.radius+INFINITY_PLANET_PIN_RADIUS;
-    if(dist>minDist+8)continue;
-    const nx=dx/dist, ny=dy/dist;
-    const pushDot=(pressureX/pressureDist)*nx+(pressureY/pressureDist)*ny;
-    if(pushDot>-0.35)continue;
-    const overlap=minDist-dist;
-    if(!best||overlap>best.overlap)best={body,bp,nx,ny,minDist,overlap};
-  }
-
-  if(!best){
-    target._infinityPlanetPin=null;
-    return false;
-  }
-
-  const pin=target._infinityPlanetPin&&target._infinityPlanetPin.bodyId===best.body.id
-    ?target._infinityPlanetPin
-    :{bodyId:best.body.id,hold:0,notified:false};
-  pin.hold+=dt;
-  target._infinityPlanetPin=pin;
-  target.x=best.bp.x+best.nx*best.minDist;
-  target.y=best.bp.y+best.ny*best.minDist;
-  target.vx=0;target.vy=0;
-  if(kind==='enemy')target.state='attack';
-
-  const ramp=Math.max(0,Math.min(1,pin.hold/3000));
-  const dps=INFINITY_PLANET_PIN_BASE_DPS+(INFINITY_PLANET_PIN_MAX_DPS-INFINITY_PLANET_PIN_BASE_DPS)*ramp;
-  damageTarget(target,kind,dps*(dt/1000));
-  if(!pin.notified){
-    pin.notified=true;
-    notify('∞ Raider pinned against a planet — crushing damage rising!', 'var(--accent)');
-  }
   return true;
 }
 function getThrust(st=state){return THRUST*(1+researchLevel('engine',st)*0.12);}
@@ -1723,9 +1628,6 @@ function enterSystem(idx,arrivalLabel){
   state.solarBeam=null;
   state.mothership=null;
   state.mothershipTimer=65000;
-  state.fleetAdmiral=null;
-  state.fleetAdmiralTimer=75000;
-  state.fleetAdmiralWarningAt=0;
   for(const f of (state.freighters||[]))f.underAttack=false;
   state.playerLasers=[];
   state.enemyLasers=[];
@@ -2234,12 +2136,6 @@ window.addEventListener('keydown',e=>{
 function interactNearest(){
   if(!state)return;
   const s=state.ship;
-  if(state.fleetAdmiral&&state.fleetAdmiral.active&&state.fleetAdmiral.hp>0){
-    const a=state.fleetAdmiral;
-    if(Math.hypot(a.x-s.x,a.y-s.y)<FLEET_ADMIRAL_INTERACT_RANGE){
-      openFleetAdmiralDialogue();return;
-    }
-  }
   if(state.mothership&&state.mothership.active){
     const m=state.mothership;
     if(Math.hypot(m.x-s.x,m.y-s.y)<MOTHERSHIP_INTERACT_RANGE){
@@ -2646,50 +2542,6 @@ function drawMap(){
     mapCtx.fillStyle='rgba(255,180,180,0.95)';
     mapCtx.font='9px "Share Tech Mono"';mapCtx.textAlign='center';
     mapCtx.fillText('MOTHERSHIP',mx,my-16);
-  }
-
-  if(state.fleetAdmiral && state.fleetAdmiral.active && state.fleetAdmiral.hp>0){
-    const admiral=state.fleetAdmiral;
-    const ax=wx(admiral.x), ay=wy(admiral.y);
-    const pulse=0.5+0.5*Math.sin((state.tick||0)*0.08);
-    const glow=mapCtx.createRadialGradient(ax,ay,0,ax,ay,30+8*pulse);
-    glow.addColorStop(0,'rgba(255,215,0,0.34)');
-    glow.addColorStop(0.48,'rgba(255,45,85,0.18)');
-    glow.addColorStop(1,'transparent');
-    mapCtx.beginPath();mapCtx.arc(ax,ay,30+8*pulse,0,Math.PI*2);mapCtx.fillStyle=glow;mapCtx.fill();
-    mapCtx.save();mapCtx.translate(ax,ay);mapCtx.rotate(admiral.angle||0);
-    mapCtx.beginPath();
-    mapCtx.moveTo(18,0);
-    mapCtx.lineTo(7,-9);
-    mapCtx.lineTo(-14,-7);
-    mapCtx.lineTo(-20,0);
-    mapCtx.lineTo(-14,7);
-    mapCtx.lineTo(7,9);
-    mapCtx.closePath();
-    mapCtx.fillStyle='rgba(18,13,5,0.98)';
-    mapCtx.strokeStyle='rgba(255,215,0,0.95)';
-    mapCtx.lineWidth=1.8;
-    mapCtx.fill();mapCtx.stroke();
-    mapCtx.beginPath();mapCtx.rect(-8,-5,12,10);
-    mapCtx.fillStyle='rgba(255,45,85,0.38)';
-    mapCtx.strokeStyle='rgba(255,215,0,0.78)';
-    mapCtx.lineWidth=0.8;
-    mapCtx.fill();mapCtx.stroke();
-    mapCtx.restore();
-    const hpFrac=Math.max(0,admiral.hp/admiral.maxHp);
-    mapCtx.beginPath();mapCtx.arc(ax,ay,23,-Math.PI/2,-Math.PI/2+Math.PI*2*hpFrac);
-    mapCtx.strokeStyle=hpFrac>0.45?'rgba(255,215,0,0.9)':'rgba(255,45,85,0.95)';
-    mapCtx.lineWidth=2;
-    mapCtx.stroke();
-    if(admiral.laser){
-      mapCtx.beginPath();mapCtx.arc(ax,ay,27+4*pulse,0,Math.PI*2);
-      mapCtx.strokeStyle='rgba(255,45,85,0.82)';
-      mapCtx.lineWidth=1.2;
-      mapCtx.setLineDash([3,5]);mapCtx.stroke();mapCtx.setLineDash([]);
-    }
-    mapCtx.fillStyle='rgba(255,230,160,0.96)';
-    mapCtx.font='9px "Share Tech Mono"';mapCtx.textAlign='center';
-    mapCtx.fillText('ADMIRAL',ax,ay-30);
   }
 
   // Ship — always shown, centered if recentered
@@ -3538,14 +3390,6 @@ function openMothershipDialogue(){
   document.getElementById('mothership-screen').classList.add('open');
 }
 
-function openFleetAdmiralDialogue(){
-  if(!state||!state.fleetAdmiral)return;
-  gamePaused=true;
-  document.getElementById('pause-screen').classList.remove('open');
-  updateFleetAdmiralDialogue();
-  document.getElementById('mothership-screen').classList.add('open');
-}
-
 window.closeMothershipDialogue=function(){
   document.getElementById('mothership-screen').classList.remove('open');
   if(gameRunning&&!gameOver&&!state.rewindPending)gamePaused=false;
@@ -3563,10 +3407,8 @@ function mothershipLine(){
 function updateMothershipDialogue(){
   const m=state.mothership;
   if(!m)return;
-  document.getElementById('mothership-title').textContent='LEVIATHAN DIPLOMACY';
   document.getElementById('mothership-line').textContent=`Mothership: "${mothershipLine()}"`;
   document.getElementById('mothership-reserves').textContent=`${Math.floor(state.credits)}¢ · ${Math.floor(state.food)} food · Raider kills this session: ${state.raidersDestroyedSession||0} · Labs: ${countLabs()}`;
-  document.getElementById('mothership-msg').textContent='';
   const actions=document.getElementById('mothership-actions');
   actions.innerHTML='';
   const options=[
@@ -3588,129 +3430,6 @@ function updateMothershipDialogue(){
   fight.textContent='End negotiations. Target engines and hangar.';
   fight.addEventListener('click',()=>startMothershipCombat('Negotiations abandoned. Leviathan weapons are hot.'));
   actions.appendChild(fight);
-}
-
-function fleetAdmiralLine(){
-  return 'Your colony network has reached strategic value. Submit tribute or be reduced to examples.';
-}
-
-function latestBuiltModules(count=FLEET_ADMIRAL_MODULE_TRIBUTE){
-  if(!state)return [];
-  const picked=[];
-  const seen=new Set();
-  const add=(body,slotIdx,type)=>{
-    if(!body||!['farm','fuel','lab'].includes(type))return;
-    const key=`${body.id}:${slotIdx}`;
-    if(seen.has(key))return;
-    seen.add(key);
-    picked.push({body,slotIdx,type});
-  };
-  const hist=[...(state.buildingHistory||[])].sort((a,b)=>(b.time||0)-(a.time||0));
-  for(const h of hist){
-    const body=bodyById(h.bodyId);
-    if(body&&body.slots[h.slotIdx]===h.type)add(body,h.slotIdx,h.type);
-    if(picked.length>=count)return picked;
-  }
-  for(const body of [...state.planets,...state.moons]){
-    for(let i=body.slots.length-1;i>=0;i--){
-      if(typeof body.slots[i]==='string')add(body,i,body.slots[i]);
-      if(picked.length>=count)return picked;
-    }
-  }
-  return picked;
-}
-
-function sacrificeLatestModules(count=FLEET_ADMIRAL_MODULE_TRIBUTE){
-  const modules=latestBuiltModules(count);
-  if(modules.length<count)return null;
-  for(const mod of modules){
-    mod.body.slots[mod.slotIdx]=null;
-  }
-  const removed=new Set(modules.map(m=>`${m.body.id}:${m.slotIdx}`));
-  state.buildingHistory=(state.buildingHistory||[]).filter(h=>!removed.has(`${h.bodyId}:${h.slotIdx}`));
-  if(activePlanet)renderSlots(activePlanet);
-  return modules;
-}
-
-function dismissFleetAdmiral(message='Fleet Admiral jump signature fading.'){
-  const a=state&&state.fleetAdmiral;
-  if(!a)return;
-  state.ramEffects.push({
-    x:a.x,y:a.y,created:performance.now(),life:720,
-    accent:'#ffd700',
-    bolts:makeBlackFlashBolts(a.x,a.y,18),
-  });
-  state.fleetAdmiral=null;
-  state.fleetAdmiralTimer=0;
-  closeMothershipDialogue();
-  notify(message,'var(--accent)');
-  updateHUD();
-  saveState();
-}
-
-function updateFleetAdmiralDialogue(){
-  const a=state.fleetAdmiral;
-  if(!a)return;
-  const modules=latestBuiltModules(FLEET_ADMIRAL_MODULE_TRIBUTE);
-  document.getElementById('mothership-title').textContent='FLEET ADMIRAL NEGOTIATION';
-  document.getElementById('mothership-line').textContent=`Fleet Admiral: "${fleetAdmiralLine()}"`;
-  document.getElementById('mothership-reserves').textContent=`${Math.floor(state.credits)}¢ · Raider kills this session: ${state.raidersDestroyedSession||0} · Sacrifice-ready modules: ${modules.length}/${FLEET_ADMIRAL_MODULE_TRIBUTE}`;
-  document.getElementById('mothership-msg').textContent='';
-  const actions=document.getElementById('mothership-actions');
-  actions.innerHTML='';
-  const options=[
-    {id:'bribe',label:`Player [Pay Tribute]: Transfer ${FLEET_ADMIRAL_BRIBE} Credits and leave our colonies intact.`,req:`Requires ${FLEET_ADMIRAL_BRIBE} Credits`,ok:state.credits>=FLEET_ADMIRAL_BRIBE},
-    {id:'sacrifice',label:`Player [Sacrifice]: Take our ${FLEET_ADMIRAL_MODULE_TRIBUTE} latest modules as tribute and withdraw.`,req:`Requires ${FLEET_ADMIRAL_MODULE_TRIBUTE} completed modules`,ok:modules.length>=FLEET_ADMIRAL_MODULE_TRIBUTE},
-    {id:'intimidate',label:'Player [Intimidate]: Count the wreckage. Three hundred raiders failed before you arrived.',req:`Requires ${FLEET_ADMIRAL_INTIMIDATE_KILLS} raider kills this session`,ok:(state.raidersDestroyedSession||0)>=FLEET_ADMIRAL_INTIMIDATE_KILLS},
-  ];
-  for(const opt of options){
-    const btn=document.createElement('button');
-    btn.className='dialogue-btn';
-    btn.disabled=!opt.ok;
-    btn.innerHTML=`${opt.label}<span class="dialogue-req">${opt.req}</span>`;
-    btn.addEventListener('click',()=>resolveFleetAdmiralChoice(opt.id));
-    actions.appendChild(btn);
-  }
-  const fight=document.createElement('button');
-  fight.className='dialogue-btn danger';
-  fight.textContent='End negotiations. Destroy the ship.';
-  fight.addEventListener('click',()=>startFleetAdmiralCombat('Negotiations ended. Fleet Admiral weapons are free.'));
-  actions.appendChild(fight);
-}
-
-function resolveFleetAdmiralChoice(id){
-  if(!state||!state.fleetAdmiral)return;
-  const msg=document.getElementById('mothership-msg');
-  if(id==='bribe'&&state.credits>=FLEET_ADMIRAL_BRIBE){
-    state.credits-=FLEET_ADMIRAL_BRIBE;
-    updateHUD();
-    msg.textContent='Fleet Admiral: "Tribute accepted. This system is reprioritized."';
-    setTimeout(()=>dismissFleetAdmiral('Fleet Admiral accepted 2000¢ and withdrew.'),900);
-    return;
-  }
-  if(id==='sacrifice'){
-    const modules=sacrificeLatestModules(FLEET_ADMIRAL_MODULE_TRIBUTE);
-    if(modules){
-      updateHUD();
-      const names=modules.map(m=>`${m.type} on ${m.body.name}`).join(', ');
-      msg.textContent=`Fleet Admiral: "Material tribute accepted: ${names}."`;
-      setTimeout(()=>dismissFleetAdmiral('Fleet Admiral departed with your module tribute.'),900);
-      return;
-    }
-  }
-  if(id==='intimidate'&&(state.raidersDestroyedSession||0)>=FLEET_ADMIRAL_INTIMIDATE_KILLS){
-    msg.textContent='Fleet Admiral: "Three hundred confirmed losses. Engagement denied."';
-    setTimeout(()=>dismissFleetAdmiral('Fleet Admiral withdrew under threat.'),900);
-    return;
-  }
-  startFleetAdmiralCombat('Fleet Admiral: "Defiance logged. Commencing extermination."');
-}
-
-function startFleetAdmiralCombat(message){
-  if(!state||!state.fleetAdmiral)return;
-  state.fleetAdmiral.negotiated=true;
-  closeMothershipDialogue();
-  notify(message,'var(--red)');
 }
 
 function resolveMothershipChoice(id){
@@ -3890,260 +3609,6 @@ function resolveMothershipRam(){
       s.vx+=nx*2.8;s.vy+=ny*2.8;
       damagePlayer(FAILED_RAM_DAMAGE+14,'⚠ Leviathan hull impact!');
     }
-  }
-}
-
-// ===== FLEET ADMIRAL BOSS =====
-function mostPopulatedColony(){
-  const colonies=playerColonies();
-  if(!colonies.length)return null;
-  let best=colonies[0],bestScore=-1;
-  for(const b of colonies){
-    const modules=(b.slots||[]).filter(Boolean).length;
-    const farms=(b.slots||[]).filter(sl=>sl==='farm').length;
-    const score=modules*10+farms*3+(b.name==='Homeworld'?1:0);
-    if(score>bestScore){best=b;bestScore=score;}
-  }
-  return best;
-}
-
-function fleetAdmiralThreatReady(){
-  if(!state||state.fleetAdmiral||state.mothership)return false;
-  const colonies=playerColonies();
-  const modules=colonies.reduce((sum,b)=>sum+(b.slots||[]).filter(Boolean).length,0);
-  return colonies.length>=3||modules>=6||(state.raidersDestroyedSession||0)>=12;
-}
-
-function armFleetAdmiralWarning(){
-  if(!state||state.fleetAdmiral||state.fleetAdmiralWarningAt)return;
-  state.fleetAdmiralWarningAt=performance.now()+FLEET_ADMIRAL_WARNING_DELAY;
-  state.screenShake=Math.max(state.screenShake||0,10);
-  notify('⚠ HIGH-THREAT WARNING: Fleet Admiral warp signature detected', 'var(--red)');
-}
-
-function spawnFleetAdmiral(){
-  if(!state||state.fleetAdmiral)return;
-  const target=mostPopulatedColony()||state.planets[0];
-  const tp=bodyPos(target);
-  const a=Math.random()*Math.PI*2;
-  const dist=1500+rnd(240,520);
-  const now=performance.now();
-  state.fleetAdmiral={
-    active:true,
-    x:tp.x+Math.cos(a)*dist,
-    y:tp.y+Math.sin(a)*dist,
-    vx:0,vy:0,
-    angle:a+Math.PI,
-    hp:FLEET_ADMIRAL_HEALTH,
-    maxHp:FLEET_ADMIRAL_HEALTH,
-    targetBodyId:target&&target.id,
-    warpedAt:now,
-    warpUntil:now+1800,
-    carrierTimer:6000,
-    hangarUntil:0,
-    laserTimer:5000,
-    laser:null,
-    damageTick:0,
-    lastTargetNotice:0,
-  };
-  state.fleetAdmiralWarningAt=0;
-  state.screenShake=Math.max(state.screenShake||0,18);
-  notify('⚠ Fleet Admiral Ship has entered the system', 'var(--red)');
-}
-
-function fleetAdmiralDrawAngle(a){
-  return (a.angle||0)+Math.sin((state&&state.tick||0)*0.004)*0.018;
-}
-
-function fleetAdmiralLocalPoint(a,x,y){
-  const r=fleetAdmiralDrawAngle(a);
-  const ca=Math.cos(r),sa=Math.sin(r);
-  return {x:a.x+x*ca-y*sa,y:a.y+x*sa+y*ca};
-}
-
-function isInfinityBlockingFleetLaser(laser){
-  if(!state||state.activeWeapon!=='infinity'||!state.infinityActive||!laser)return false;
-  const sx=laser.x,sy=laser.y,ex=laser.x2,ey=laser.y2;
-  const dx=ex-sx,dy=ey-sy,len=Math.hypot(dx,dy)||1;
-  const ux=dx/len,uy=dy/len;
-  const px=state.ship.x-sx,py=state.ship.y-sy;
-  const along=px*ux+py*uy;
-  if(along<0||along>len)return false;
-  const lateral=Math.abs(px*uy-py*ux);
-  return lateral<getInfinityRadius()+18;
-}
-
-function clipFleetLaserAtInfinity(laser){
-  const sx=laser.x,sy=laser.y,ex=laser.x2,ey=laser.y2;
-  const dx=ex-sx,dy=ey-sy,len=Math.hypot(dx,dy)||1;
-  const ux=dx/len,uy=dy/len;
-  const px=state.ship.x-sx,py=state.ship.y-sy;
-  const along=px*ux+py*uy;
-  const lateral=px*uy-py*ux;
-  const r=getInfinityRadius()+8;
-  const chord=Math.sqrt(Math.max(0,r*r-lateral*lateral));
-  const stop=Math.max(0,Math.min(len,along-chord-8));
-  return {
-    x:sx+ux*stop,
-    y:sy+uy*stop,
-    ux,uy,
-    splitX:sx+ux*Math.max(0,Math.min(len,along-chord)),
-    splitY:sy+uy*Math.max(0,Math.min(len,along-chord)),
-  };
-}
-
-function updateFleetAdmiral(dt,now=performance.now()){
-  if(!state)return;
-  state.fleetAdmiralTimer=(state.fleetAdmiralTimer||0)+dt;
-  if(!state.fleetAdmiral&&state.fleetAdmiralTimer>=FLEET_ADMIRAL_CHECK_INTERVAL){
-    state.fleetAdmiralTimer=0;
-    if(fleetAdmiralThreatReady())armFleetAdmiralWarning();
-  }
-  if(state.fleetAdmiralWarningAt&&now>=state.fleetAdmiralWarningAt)spawnFleetAdmiral();
-  const a=state.fleetAdmiral;
-  if(!a||!a.active)return;
-  if(a.hp<=0){
-    state.credits+=420;
-    state.ramEffects.push({x:a.x,y:a.y,created:now,life:900,accent:'#ffd700',bolts:makeBlackFlashBolts(a.x,a.y,22)});
-    state.screenShake=Math.max(state.screenShake||0,22);
-    state.fleetAdmiral=null;
-    state.fleetAdmiralTimer=0;
-    notify('Fleet Admiral destroyed! Salvage bounty +420¢', 'var(--green)');
-    updateHUD();
-    return;
-  }
-
-  const target=mostPopulatedColony();
-  if(target){
-    a.targetBodyId=target.id;
-    if(now-(a.lastTargetNotice||0)>14000){
-      a.lastTargetNotice=now;
-      notify(`⚠ Fleet Admiral targeting ${target.name}`, 'var(--red)');
-    }
-  }
-
-  a.carrierTimer=(a.carrierTimer||0)+dt;
-  if(!a.hangarUntil&&a.carrierTimer>=FLEET_ADMIRAL_CARRIER_CD){
-    a.carrierTimer=0;
-    a.hangarUntil=now+FLEET_ADMIRAL_CARRIER_HALT;
-    a.vx*=0.1;a.vy*=0.1;
-    notify('⚠ Fleet Admiral hangar bays opening', 'var(--red)');
-  }
-  if(a.hangarUntil&&now>=a.hangarUntil){
-    a.hangarUntil=0;
-    const count=2+Math.floor(Math.random()*2);
-    for(let i=0;i<count;i++){
-      if((state.enemies||[]).length>=10)break;
-      spawnEnemy(true);
-      const e=state.enemies[state.enemies.length-1];
-      if(e){
-        const side=i-(count-1)/2;
-        const p=fleetAdmiralLocalPoint(a,-42,side*42);
-        e.x=p.x;e.y=p.y;
-        const launch=a.angle+Math.PI+rnd(-0.35,0.35);
-        e.vx=Math.cos(launch)*2.2;
-        e.vy=Math.sin(launch)*2.2;
-        e.state='attack';
-      }
-    }
-    notify(`⚠ Carrier Inbound: ${count} raiders launched`, 'var(--red)');
-  }
-
-  if(!a.hangarUntil){
-    const targetBody=bodyById(a.targetBodyId)||target;
-    const tp=targetBody?bodyPos(targetBody):state.ship;
-    const hold=(targetBody&&targetBody.radius||40)+260;
-    const wantAngle=Math.atan2(tp.y-a.y,tp.x-a.x);
-    let da=wantAngle-a.angle;
-    while(da>Math.PI)da-=Math.PI*2;
-    while(da<-Math.PI)da+=Math.PI*2;
-    a.angle+=Math.sign(da)*Math.min(Math.abs(da),ROTATE_SPEED*0.48);
-    const dist=Math.hypot(tp.x-a.x,tp.y-a.y);
-    if(dist>hold){
-      a.vx+=Math.cos(a.angle)*FLEET_ADMIRAL_SPEED;
-      a.vy+=Math.sin(a.angle)*FLEET_ADMIRAL_SPEED;
-    }
-  }
-  a.vx*=0.985;a.vy*=0.985;
-  const sp=Math.hypot(a.vx,a.vy);
-  if(sp>2.4){a.vx=a.vx/sp*2.4;a.vy=a.vy/sp*2.4;}
-  a.x+=a.vx;a.y+=a.vy;
-
-  a.laserTimer=(a.laserTimer||0)+dt;
-  if(!a.laser&&a.laserTimer>=FLEET_ADMIRAL_LASER_CD){
-    a.laserTimer=0;
-    a.laser={phase:'lock',started:now,x:a.x,y:a.y,x2:state.ship.x,y2:state.ship.y};
-    notify('⚠ Fleet Admiral laser lock detected', 'var(--red)');
-  }
-  if(a.laser){
-    const l=a.laser;
-    if(l.phase==='lock'){
-      l.x=a.x;l.y=a.y;l.x2=state.ship.x;l.y2=state.ship.y;
-      if(now-l.started>=FLEET_ADMIRAL_LASER_LOCK){
-        l.phase='fire';
-        l.started=now;
-        const ang=Math.atan2(l.y2-l.y,l.x2-l.x);
-        l.x=a.x+Math.cos(ang)*155;
-        l.y=a.y+Math.sin(ang)*155;
-        l.x2=l.x+Math.cos(ang)*2600;
-        l.y2=l.y+Math.sin(ang)*2600;
-        l.angle=ang;
-        a.damageTick=0;
-        state.screenShake=Math.max(state.screenShake||0,12);
-      }
-    } else if(l.phase==='fire'){
-      a.damageTick=(a.damageTick||0)+dt;
-      if(a.damageTick>=250){
-        a.damageTick=0;
-        const blocked=isInfinityBlockingFleetLaser(l);
-        const dx=l.x2-l.x,dy=l.y2-l.y,len=Math.hypot(dx,dy)||1;
-        const ux=dx/len,uy=dy/len;
-        const px=state.ship.x-l.x,py=state.ship.y-l.y;
-        const along=px*ux+py*uy;
-        const lateral=Math.abs(px*uy-py*ux);
-        if(!blocked&&along>0&&along<len&&lateral<24)damagePlayer(FLEET_ADMIRAL_LASER_DAMAGE,'⚠ Admiral laser strike!');
-      }
-      if(now-l.started>=FLEET_ADMIRAL_LASER_FIRE)a.laser=null;
-    }
-  }
-}
-
-function damageFleetAdmiral(amount,ram=false,x=null,y=null){
-  const a=state&&state.fleetAdmiral;
-  if(!a||a.hp<=0)return;
-  a.hp=Math.max(0,a.hp-amount);
-  if(ram){
-    const fx=x??a.x,fy=y??a.y;
-    state.ramEffects.push({x:fx,y:fy,created:performance.now(),life:560,accent:'#ffd700',bolts:makeBlackFlashBolts(fx,fy,18)});
-    state.hitStopTimer=Math.max(state.hitStopTimer||0,DIVERGENT_RAM_HITSTOP);
-    state.screenShake=Math.max(state.screenShake||0,20);
-    addShipRamAfterimage();
-    notify('BLACK FLASH buckled the Fleet Admiral armor!', '#ffd700');
-  }
-}
-
-function resolveFleetAdmiralRam(){
-  const a=state&&state.fleetAdmiral;
-  if(!a||a.hp<=0)return;
-  const s=state.ship;
-  const dx=s.x-a.x,dy=s.y-a.y;
-  const dist=Math.hypot(dx,dy)||1;
-  const hitRadius=110;
-  if(dist>hitRadius)return;
-  const speed=Math.hypot(s.vx,s.vy);
-  const nx=dx/dist,ny=dy/dist;
-  if(speed>=FLEET_ADMIRAL_RAM_SPEED&&state.fuel>=DIVERGENT_RAM_FUEL_COST&&(state.ramCooldown||0)<=0){
-    state.fuel=Math.max(0,state.fuel-DIVERGENT_RAM_FUEL_COST);
-    state.ramCooldown=DIVERGENT_RAM_COOLDOWN;
-    damageFleetAdmiral(FLEET_ADMIRAL_RAM_DAMAGE,true,(s.x+a.x)/2,(s.y+a.y)/2);
-    s.vx=nx*Math.max(3.4,speed*0.34);
-    s.vy=ny*Math.max(3.4,speed*0.34);
-  } else if((a.lastCollisionHit||0)+900<performance.now()){
-    a.lastCollisionHit=performance.now();
-    s.x=a.x+nx*hitRadius;
-    s.y=a.y+ny*hitRadius;
-    s.vx+=nx*3.1;s.vy+=ny*3.1;
-    damagePlayer(24,'⚠ Fleet Admiral collision!');
   }
 }
 
@@ -4381,7 +3846,6 @@ function findBeamTarget(){
   }
   for(const r of (state.tradeRaiders||[]))consider(r,'raider',16);
   for(const e of (state.enemies||[]))consider(e,'enemy',16);
-  if(state.fleetAdmiral&&state.fleetAdmiral.hp>0)consider(state.fleetAdmiral,'fleetAdmiral',118);
   if(state.mothership&&state.mothership.mode==='combat'){
     for(const comp of mothershipComponents()){
       if(state.mothership[comp.key]>0)consider({...comp,hp:state.mothership[comp.key]},'mothership',comp.r);
@@ -4719,7 +4183,6 @@ function resolveRamTarget(target,kind){
 function resolveRamCollisions(){
   for(const e of (state.enemies||[]))resolveRamTarget(e,'enemy');
   for(const r of (state.tradeRaiders||[]))resolveRamTarget(r,'raider');
-  resolveFleetAdmiralRam();
 }
 
 function spawnGravityWell(x,y){
@@ -4754,10 +4217,6 @@ function damageTarget(target,kind,amount){
   if(kind==='mothership'){
     const comp=mothershipComponents().find(c=>c.key===target.key);
     if(comp)damageMothershipComponent(comp,amount);
-    return;
-  }
-  if(kind==='fleetAdmiral'){
-    damageFleetAdmiral(amount);
     return;
   }
   target.hp-=amount;
@@ -4877,12 +4336,10 @@ function updateEnemies(dt, now){
       }
       e.state='attack';
     }
-    if(resolveInfinityPlanetPin(e,'enemy',dt))continue;
     if((e.disabledUntil||0)>now){
       applyInfinityPush(e,'craft');
       e.vx*=0.9;e.vy*=0.9;
       e.x+=e.vx;e.y+=e.vy;
-      resolveInfinityPlanetPin(e,'enemy',dt);
       continue;
     }
 
@@ -4934,7 +4391,6 @@ function updateEnemies(dt, now){
     if(espd>6){e.vx=e.vx/espd*6;e.vy=e.vy/espd*6;}
     applyInfinityPush(e,'craft');
     e.x += e.vx; e.y += e.vy;
-    if(resolveInfinityPlanetPin(e,'enemy',dt))continue;
 
     // ── Enemy fires only when actively attacking (retaliate-triggered) ──
     if(e.state==='attack' && distToPlayer < ENEMY_AGGRO_RANGE*0.9){
@@ -5040,11 +4496,6 @@ function updateEnemies(dt, now){
           }
         }
       }
-      const admiral=state.fleetAdmiral;
-      if(admiral&&admiral.hp>0&&!l.hitIds.fleetAdmiral&&Math.hypot(l.x-admiral.x,l.y-admiral.y)<l.radius+118){
-        l.hitIds.fleetAdmiral=true;
-        damageFleetAdmiral(getWeaponDamage('pulse')*0.8);
-      }
       return true;
     }
     if(l.type==='flak'){
@@ -5071,12 +4522,6 @@ function updateEnemies(dt, now){
             p.life=0;
           }
         }
-        const admiral=state.fleetAdmiral;
-        if(admiral&&admiral.hp>0&&p.life>0&&!p.hitIds.fleetAdmiral&&Math.hypot(p.x-admiral.x,p.y-admiral.y)<104){
-          p.hitIds.fleetAdmiral=true;
-          damageFleetAdmiral(getWeaponDamage('flak')*0.55);
-          p.life=0;
-        }
       }
       return (l.pellets||[]).some(p=>p.life>0);
     }
@@ -5093,12 +4538,6 @@ function updateEnemies(dt, now){
         else damageTarget(e,'enemy',getWeaponDamage(l.type||'laser'));
         return false;
       }
-    }
-    const admiral=state.fleetAdmiral;
-    if(admiral&&admiral.hp>0&&Math.hypot(l.x-admiral.x,l.y-admiral.y)<(l.type==='railgun'?96:110)){
-      if(l.type==='gravity')spawnGravityWell(l.x,l.y);
-      else damageFleetAdmiral(getWeaponDamage(l.type||'laser'));
-      return false;
     }
     return true;
   });
@@ -5316,12 +4755,10 @@ function updateTradeRoutes(dt){
   for(const r of state.tradeRaiders){
     const f=freighters.find(fr=>fr.id===r.targetFreighterId&&fr.hp>0);
     if(!f){r.hp=0;continue;}
-    if(resolveInfinityPlanetPin(r,'raider',dt))continue;
     if((r.disabledUntil||0)>performance.now()){
       applyInfinityPush(r,'craft');
       r.vx*=0.9;r.vy*=0.9;
       r.x+=r.vx;r.y+=r.vy;
-      resolveInfinityPlanetPin(r,'raider',dt);
       continue;
     }
     const dx=f.x-r.x, dy=f.y-r.y;
@@ -5340,7 +4777,6 @@ function updateTradeRoutes(dt){
     if(sp>5.5){r.vx=r.vx/sp*5.5;r.vy=r.vy/sp*5.5;}
     applyInfinityPush(r,'craft');
     r.x+=r.vx;r.y+=r.vy;
-    if(resolveInfinityPlanetPin(r,'raider',dt))continue;
     if(dist<42){
       r.attackTimer=(r.attackTimer||0)+dt;
       if(r.attackTimer>760){
@@ -5531,7 +4967,6 @@ function update(dt){
     updateTradeRoutes(dt);
     updateEscorts(dt, performance.now());
     updateMothership(dt);
-    updateFleetAdmiral(dt, performance.now());
     updateVoidEvents(dt);
     applyGravityWells(dt);
     updateSolarBeam(dt);
@@ -5796,7 +5231,6 @@ function draw(){
   drawSpaceStation(ctx,state.tick);
   drawVoidEvents(ctx,state.tick);
   drawMothership(ctx,state.tick);
-  drawFleetAdmiral(ctx,state.tick);
 
   // Orbital guides
   for(const p of state.planets){
@@ -5842,18 +5276,6 @@ function draw(){
       ctx.fillStyle='rgba(255,45,85,0.9)';
       ctx.font='10px "Share Tech Mono"';ctx.textAlign='center';
       ctx.fillText('[E] Negotiate',m.x,m.y-105);
-    }
-  }
-  if(state.fleetAdmiral&&state.fleetAdmiral.active&&state.fleetAdmiral.hp>0){
-    const a=state.fleetAdmiral;
-    const dist=Math.hypot(a.x-state.ship.x,a.y-state.ship.y);
-    if(dist<FLEET_ADMIRAL_INTERACT_RANGE*1.6){
-      ctx.beginPath();ctx.arc(a.x,a.y,FLEET_ADMIRAL_INTERACT_RANGE,0,Math.PI*2);
-      ctx.strokeStyle=`rgba(255,215,0,${Math.max(0.12,1-dist/(FLEET_ADMIRAL_INTERACT_RANGE*1.6))*0.48})`;
-      ctx.lineWidth=1.5;ctx.setLineDash([7,8]);ctx.stroke();ctx.setLineDash([]);
-      ctx.fillStyle='rgba(255,230,160,0.95)';
-      ctx.font='10px "Share Tech Mono"';ctx.textAlign='center';
-      ctx.fillText('[E] Negotiate',a.x,a.y-185);
     }
   }
 
@@ -6132,13 +5554,6 @@ function draw(){
       ctx.fillStyle='rgba(0,212,255,0.9)';
       ctx.fillText('DISABLED',e.x,e.y+34);
     }
-    if(e._infinityPlanetPin){
-      const pulse=0.5+Math.sin(state.tick*0.24)*0.5;
-      ctx.beginPath();ctx.arc(e.x,e.y,24+3*pulse,0,Math.PI*2);
-      ctx.strokeStyle=`rgba(180,245,255,${0.52+0.28*pulse})`;ctx.lineWidth=1.4;ctx.stroke();
-      ctx.fillStyle='rgba(180,245,255,0.92)';
-      ctx.fillText('PINNED',e.x,e.y+36);
-    }
   }
   drawBlackFlashEffects(ctx);
 
@@ -6229,144 +5644,6 @@ function drawBlackFlashEffects(ctx){
     ctx.stroke();
     ctx.restore();
   }
-}
-
-function drawFleetAdmiral(ctx,tick){
-  const a=state&&state.fleetAdmiral;
-  if(!a||!a.active)return;
-  const now=performance.now();
-  if(a.laser){
-    drawFleetAdmiralLaser(ctx,a,a.laser,now);
-  }
-
-  ctx.save();
-  ctx.translate(a.x,a.y);
-  ctx.rotate(fleetAdmiralDrawAngle(a));
-  const pulse=0.5+0.5*Math.sin(tick*0.045);
-  const scale=1.5;
-  if(a.warpUntil&&now<a.warpUntil){
-    const t=1-(a.warpUntil-now)/1800;
-    ctx.save();
-    ctx.globalAlpha=0.75*(1-t);
-    ctx.rotate(t*2.4);
-    for(let i=0;i<4;i++){
-      ctx.beginPath();
-      ctx.ellipse(0,0,95*scale+t*220+i*34,34*scale+t*78+i*18,i*0.42,0,Math.PI*2);
-      ctx.strokeStyle=`rgba(255,215,0,${0.42*(1-t)})`;
-      ctx.lineWidth=3;
-      ctx.stroke();
-    }
-    ctx.restore();
-    ctx.scale(0.55+t*0.45,0.55+t*0.45);
-  }
-
-  const aura=ctx.createRadialGradient(0,0,28,0,0,245*scale);
-  aura.addColorStop(0,`rgba(255,215,0,${0.12+0.08*pulse})`);
-  aura.addColorStop(0.45,`rgba(255,45,85,${0.05+0.03*pulse})`);
-  aura.addColorStop(1,'transparent');
-  ctx.beginPath();ctx.arc(0,0,245*scale,0,Math.PI*2);ctx.fillStyle=aura;ctx.fill();
-
-  ctx.scale(scale,scale);
-  ctx.beginPath();
-  ctx.moveTo(158,0);
-  ctx.lineTo(86,-42);
-  ctx.lineTo(24,-68);
-  ctx.lineTo(-58,-64);
-  ctx.lineTo(-138,-38);
-  ctx.lineTo(-122,-14);
-  ctx.lineTo(-154,0);
-  ctx.lineTo(-122,14);
-  ctx.lineTo(-138,38);
-  ctx.lineTo(-58,64);
-  ctx.lineTo(24,68);
-  ctx.lineTo(86,42);
-  ctx.closePath();
-  ctx.fillStyle='#100d08';
-  ctx.strokeStyle='#c89b2c';
-  ctx.lineWidth=3.2;
-  ctx.fill();ctx.stroke();
-
-  ctx.beginPath();
-  ctx.moveTo(134,0);ctx.lineTo(82,-19);ctx.lineTo(58,0);ctx.lineTo(82,19);ctx.closePath();
-  ctx.fillStyle='rgba(255,215,0,0.16)';ctx.strokeStyle='rgba(255,215,0,0.72)';ctx.lineWidth=1.5;
-  ctx.fill();ctx.stroke();
-
-  ctx.beginPath();ctx.ellipse(26,0,50,20,0,0,Math.PI*2);
-  ctx.fillStyle='rgba(0,0,0,0.78)';ctx.strokeStyle='rgba(255,215,0,0.82)';ctx.lineWidth=2;ctx.fill();ctx.stroke();
-
-  const hangarGlow=a.hangarUntil&&now<a.hangarUntil?0.72+0.24*pulse:0.22;
-  ctx.beginPath();ctx.rect(-54,-34,82,68);
-  ctx.fillStyle=`rgba(255,45,85,${hangarGlow*0.26})`;ctx.strokeStyle=`rgba(255,215,0,${0.58+hangarGlow*0.3})`;ctx.lineWidth=1.8;ctx.fill();ctx.stroke();
-  for(const y of [-20,0,20]){
-    ctx.beginPath();ctx.moveTo(-42,y);ctx.lineTo(18,y);
-    ctx.strokeStyle=`rgba(255,215,0,${0.42+hangarGlow*0.3})`;ctx.lineWidth=2;ctx.stroke();
-  }
-
-  ctx.beginPath();ctx.rect(-134,-38,48,24);ctx.rect(-134,14,48,24);ctx.rect(-148,-9,62,18);
-  ctx.fillStyle='rgba(255,215,0,0.12)';ctx.strokeStyle='rgba(200,155,44,0.8)';ctx.lineWidth=1.4;ctx.fill();ctx.stroke();
-  for(const ey of [-28,0,28]){
-    const flame=ctx.createLinearGradient(-150,ey,-190,ey);
-    flame.addColorStop(0,`rgba(255,180,50,${0.74+0.18*pulse})`);
-    flame.addColorStop(1,'transparent');
-    ctx.beginPath();ctx.moveTo(-142,ey-7);ctx.lineTo(-188-12*pulse,ey);ctx.lineTo(-142,ey+7);ctx.closePath();
-    ctx.fillStyle=flame;ctx.fill();
-  }
-  ctx.restore();
-
-  const hpFrac=Math.max(0,a.hp/a.maxHp);
-  const bw=190,bh=8;
-  ctx.fillStyle='rgba(0,0,0,0.62)';ctx.fillRect(a.x-bw/2,a.y-165,bw,bh);
-  ctx.fillStyle=hpFrac>0.5?'#c89b2c':hpFrac>0.22?'#ffd700':'#ff2d55';
-  ctx.fillRect(a.x-bw/2,a.y-165,bw*hpFrac,bh);
-  ctx.strokeStyle='rgba(255,215,0,0.58)';ctx.lineWidth=1;ctx.strokeRect(a.x-bw/2,a.y-165,bw,bh);
-  ctx.fillStyle='rgba(255,230,160,0.96)';
-  ctx.font='12px "Orbitron"';ctx.textAlign='center';
-  ctx.fillText('FLEET ADMIRAL',a.x,a.y+168);
-  if(a.hangarUntil&&now<a.hangarUntil){
-    ctx.fillStyle='rgba(255,215,0,0.95)';
-    ctx.font='10px "Share Tech Mono"';
-    ctx.fillText('CARRIER INBOUND',a.x,a.y+184);
-  }
-}
-
-function drawFleetAdmiralLaser(ctx,a,l,now){
-  ctx.save();
-  if(l.phase==='lock'){
-    const t=Math.max(0,Math.min(1,(now-l.started)/FLEET_ADMIRAL_LASER_LOCK));
-    ctx.setLineDash([10,8]);
-    ctx.beginPath();ctx.moveTo(l.x,l.y);ctx.lineTo(l.x2,l.y2);
-    ctx.strokeStyle=`rgba(255,45,85,${0.25+0.45*t})`;ctx.lineWidth=2+t*2;ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.beginPath();ctx.arc(l.x2,l.y2,24+16*t,0,Math.PI*2);
-    ctx.strokeStyle=`rgba(255,45,85,${0.85})`;ctx.lineWidth=2;ctx.stroke();
-    ctx.beginPath();ctx.moveTo(l.x2-38,l.y2);ctx.lineTo(l.x2+38,l.y2);ctx.moveTo(l.x2,l.y2-38);ctx.lineTo(l.x2,l.y2+38);
-    ctx.strokeStyle=`rgba(255,45,85,${0.55+0.3*Math.sin(state.tick*0.22)})`;ctx.lineWidth=1.4;ctx.stroke();
-  } else if(l.phase==='fire'){
-    const age=now-l.started;
-    const alpha=Math.max(0,1-age/FLEET_ADMIRAL_LASER_FIRE);
-    let end={x:l.x2,y:l.y2};
-    const blocked=isInfinityBlockingFleetLaser(l);
-    if(blocked)end=clipFleetLaserAtInfinity(l);
-    ctx.lineCap='round';
-    ctx.beginPath();ctx.moveTo(l.x,l.y);ctx.lineTo(end.x,end.y);
-    ctx.strokeStyle=`rgba(255,20,35,${0.74+0.2*Math.sin(state.tick*0.3)})`;ctx.lineWidth=13;ctx.stroke();
-    ctx.beginPath();ctx.moveTo(l.x,l.y);ctx.lineTo(end.x,end.y);
-    ctx.strokeStyle=`rgba(255,235,220,${0.86})`;ctx.lineWidth=4.5;ctx.stroke();
-    if(blocked){
-      const r=getInfinityRadius();
-      ctx.beginPath();ctx.arc(state.ship.x,state.ship.y,r+5,0,Math.PI*2);
-      ctx.strokeStyle=`rgba(180,245,255,${0.72*alpha+0.2})`;ctx.lineWidth=3;ctx.setLineDash([4,7]);ctx.stroke();ctx.setLineDash([]);
-      for(const side of [-1,1]){
-        ctx.beginPath();
-        ctx.moveTo(end.splitX,end.splitY);
-        ctx.lineTo(end.splitX+end.ux*90-end.uy*side*70,end.splitY+end.uy*90+end.ux*side*70);
-        ctx.strokeStyle=`rgba(255,45,85,${0.42*alpha+0.2})`;ctx.lineWidth=3;ctx.stroke();
-      }
-      ctx.beginPath();ctx.arc(end.splitX,end.splitY,18+6*Math.sin(state.tick*0.3),0,Math.PI*2);
-      ctx.strokeStyle='rgba(180,245,255,0.9)';ctx.lineWidth=2;ctx.stroke();
-    }
-  }
-  ctx.restore();
 }
 
 function drawFlashPaletteWash(ctx){
@@ -6737,13 +6014,6 @@ function drawTradeRaider(ctx,r,tick){
     ctx.strokeStyle='rgba(0,212,255,0.75)';ctx.lineWidth=1.1;ctx.stroke();
     ctx.fillStyle='rgba(0,212,255,0.9)';
     ctx.fillText('JAMMED',r.x,r.y+32);
-  }
-  if(r._infinityPlanetPin){
-    const pulse=0.5+Math.sin(tick*0.24)*0.5;
-    ctx.beginPath();ctx.arc(r.x,r.y,22+3*pulse,0,Math.PI*2);
-    ctx.strokeStyle=`rgba(180,245,255,${0.52+0.28*pulse})`;ctx.lineWidth=1.4;ctx.stroke();
-    ctx.fillStyle='rgba(180,245,255,0.92)';
-    ctx.fillText('PINNED',r.x,r.y+34);
   }
 }
 
