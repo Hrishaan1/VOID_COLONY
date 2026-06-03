@@ -221,6 +221,10 @@
   .weapon-grid{display:grid;grid-template-columns:1fr;gap:8px;margin-top:10px;max-height:416px;overflow-y:auto;padding-right:4px;overscroll-behavior:contain;}
   .weapon-card{border:1px solid var(--border);background:rgba(255,255,255,0.03);padding:10px;}
   .weapon-card.active{border-color:var(--accent);background:rgba(0,212,255,0.06);}
+  .weapon-card.primary.active{border-color:var(--accent);background:rgba(0,212,255,0.06);}
+  .weapon-card.secondary.active{border-color:var(--yellow);background:rgba(255,255,255,0.04);}
+  .weapon-card .weapon-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
+  .weapon-card .weapon-actions .weapon-btn{width:calc(50% - 3px);}
   .weapon-head{display:flex;justify-content:space-between;gap:10px;margin-bottom:5px;}
   .weapon-name{font-family:'Orbitron',monospace;font-size:10px;color:var(--text-bright);letter-spacing:1px;text-transform:uppercase;}
   .weapon-tag{font-size:9px;color:var(--yellow);white-space:nowrap;}
@@ -310,6 +314,7 @@
       <div class="stat-row"><div class="hud-label">💳 Credits</div><div class="credits-wrap"><span class="credit-pop" id="freighter-credit-pop"></span><div class="hud-value" id="credits-val" style="color:var(--yellow)">200</div></div></div>
       <div class="stat-row"><div class="hud-label">System</div><div class="hud-value" id="system-val">Sol Prime</div></div>
       <div class="stat-row"><div class="hud-label">Weapon</div><div class="hud-value" id="weapon-val">Cyan Laser</div></div>
+  <div class="stat-row"><div class="hud-label">Secondary</div><div class="hud-value" id="secondary-weapon-val">None</div></div>
       <div class="stat-row"><div class="hud-label">Colonies</div><div class="hud-value" id="colony-count">0</div></div>
       <div class="stat-row"><div class="hud-label">Freighters</div><div class="hud-value" id="freighter-count">0</div></div>
       <div class="stat-row"><div class="hud-label">Farms / Fuel / Labs</div><div class="hud-value"><span id="farm-modules">0</span> / <span id="fuel-modules">0</span> / <span id="lab-modules">0</span></div></div>
@@ -1312,8 +1317,11 @@ function expandGalaxyNear(node){
 function normalizeState(s){
   s.research={...defaultResearchState(),...(s.research||{})};
   s.activeWeapon=s.activeWeapon||'laser';
+  s.secondaryWeapon=s.secondaryWeapon||null;
   s.purchasedWeapons={laser:true,...(s.purchasedWeapons||{})};
   if(!WEAPON_DEFS.some(w=>w.id===s.activeWeapon))s.activeWeapon='laser';
+  if(s.secondaryWeapon===s.activeWeapon) s.secondaryWeapon=null;
+  if(s.secondaryWeapon&&!WEAPON_DEFS.some(w=>w.id===s.secondaryWeapon))s.secondaryWeapon=null;
   if(s.playerShield===undefined)s.playerShield=0;
   if(s.lastShieldHit===undefined)s.lastShieldHit=0;
   if(s.voidEventTimer===undefined)s.voidEventTimer=30000;
@@ -1336,6 +1344,7 @@ function normalizeState(s){
     s.infinityRadius=INFINITY_RADIUS_DEFAULT;
   }
   s.fireHeld=false;
+  s.lastPlayerSecondaryShot = s.lastPlayerSecondaryShot||0;
   if(s.tradeRaidTimer===undefined)s.tradeRaidTimer=45000;
   if(s.mothershipTimer===undefined)s.mothershipTimer=70000;
   if(s.mothership===undefined)s.mothership=null;
@@ -1468,6 +1477,16 @@ function getLaserCooldown(st=state){return LASER_COOLDOWN*Math.max(0.65,1-resear
 function getWeaponDef(id){return WEAPON_DEFS.find(w=>w.id===(id||(state&&state.activeWeapon)||'laser'))||WEAPON_DEFS[0];}
 function getWeaponDamage(id,st=state){return getWeaponDef(id).damage+getWeaponBonus(st);}
 function getWeaponCooldown(id,st=state){return getWeaponDef(id).cooldown*Math.max(0.65,1-researchLevel('weapons',st)*0.10);}
+function isSecondaryWeaponId(id){
+  const def=getWeaponDef(id);
+  return !!def && def.damage>0 && !def.passive && def.id!=='solar';
+}
+function getSecondaryWeaponDamage(id,st=state){
+  return Math.round(getWeaponDamage(id,st)*0.7);
+}
+function getSecondaryWeaponCooldown(id,st=state){
+  return Math.round(getWeaponCooldown(id,st)*1.45);
+}
 function clampInfinityRadius(radius){
   const raw=Number(radius);
   if(!Number.isFinite(raw))return INFINITY_RADIUS_DEFAULT;
@@ -1816,11 +1835,14 @@ window.addEventListener('keydown',e=>{
   else keys[e.key]=true;
   if((e.key==='m'||e.key==='M')&&gameRunning&&!gameOver)toggleMap();
   if((e.key==='c'||e.key==='C')&&gameRunning&&!gameOver&&!gamePaused) toggleMouseAim();
+  // Q fires secondary weapon independently
+  if((e.key==='q'||e.key==='Q')&&gameRunning&&!gameOver&&!gamePaused){ e.preventDefault(); if(state) state.secondaryFireHeld=true; fireSecondary(); }
   if((e.code==='Space'||e.key===' ')&&gameRunning&&!gameOver&&!gamePaused){ e.preventDefault(); state.fireHeld=true; fireLaser(); }
 });
 window.addEventListener('keyup',e=>{
   if(e.code==='Space'||e.key===' '){ keys[' ']=false; if(state)state.fireHeld=false; }
   else keys[e.key]=false;
+  if(e.key==='q'||e.key==='Q'){ if(state) state.secondaryFireHeld=false; }
 });
 
 // ===== TOUCH / MOBILE =====
@@ -2311,9 +2333,13 @@ function updateHUD(){
   const systemVal=document.getElementById('system-val');
   if(systemVal)systemVal.textContent=sys?sys.name:'Origin System';
   const weaponVal=document.getElementById('weapon-val');
+  const secondaryVal=document.getElementById('secondary-weapon-val');
   if(weaponVal){
     const activeSuffix=(state.activeWeapon==='infinity'&&state.infinityActive)||(state.activeWeapon==='timestop'&&state.timeStopActive)?' ON':'';
-    weaponVal.textContent=getWeaponDef().name+activeSuffix;
+    weaponVal.textContent=getWeaponDef(state.activeWeapon).name+activeSuffix;
+  }
+  if(secondaryVal){
+    secondaryVal.textContent=state.secondaryWeapon?getWeaponDef(state.secondaryWeapon).name:'None';
   }
   const travelBtn=document.getElementById('system-travel-btn');
   if(travelBtn){
@@ -3103,25 +3129,36 @@ function updateStationUI(){
   grid.innerHTML='';
   for(const def of WEAPON_DEFS){
     const owned=!!state.purchasedWeapons[def.id];
-    const active=state.activeWeapon===def.id;
+    const primary=state.activeWeapon===def.id;
+    const secondary=state.secondaryWeapon===def.id;
     const reqOk=!def.requiresFarms||countActiveFarms()>=def.requiresFarms;
     const canBuy=state.credits>=def.cost&&reqOk;
+    const eligibleSecondary=isSecondaryWeaponId(def.id);
     const card=document.createElement('div');
-    card.className='weapon-card'+(active?' active':'');
-    const tag=active?'EQUIPPED':owned?'OWNED':reqOk?`${def.cost}¢`:`${def.requiresFarms} FARMS`;
+    card.className='weapon-card'+((primary||secondary)?' active':'')+(primary?' primary':'')+(secondary?' secondary':'');
+    const tag=primary? 'PRIMARY' : secondary? 'SECONDARY' : owned? 'OWNED' : reqOk? `${def.cost}¢` : `${def.requiresFarms} FARMS`;
     const fuel=def.fuelCost?` · ${def.fuelCost} fuel/shot`:'';
     const food=def.id==='infinity'?` · ${getInfinityFoodPerSec().toFixed(2)} food/s active · ${getInfinityActivateCost()} food toggle`:def.id==='timestop'?` · ${getTimeStopFoodPerSec()} food/s active`:def.foodPerSec?` · ${def.foodPerSec} food/s while held`:'';
     const req=def.requiresFarms?`<br>Requires: ${def.requiresFarms} active farms (${countActiveFarms()} ready)`: '';
     const dmg=def.id==='gravity'?`gravity trap ${getGravityWellRadius()}px`:def.id==='shieldburst'?`engine disable ${getShieldBurstRadius()}px`:def.id==='solar'?`${SOLAR_BEAM_BASE_DPS}-${getSolarBeamMaxDps()}/s`:def.id==='infinity'?`repulsion field ${getInfinityRadius()}px`:def.id==='timestop'?'temporal freeze':`${getWeaponDamage(def.id)}`;
     const infinityControls=def.id==='infinity'&&owned?`<div class="weapon-desc infinity-radius-readout" style="margin-top:8px;color:var(--accent)">Radius: ${getInfinityRadius()}px · Activation: ${getInfinityActivateCost()} food</div>
       <input class="infinity-radius-slider" type="range" min="${INFINITY_RADIUS_MIN}" max="${INFINITY_RADIUS_MAX}" step="${INFINITY_RADIUS_STEP}" value="${getInfinityRadius()}" aria-label="Infinity radius" style="width:100%;margin-top:8px;accent-color:var(--accent)">`:'';
+    const primaryLabel = primary ? 'Primary Equipped' : owned ? 'Equip Primary' : `Buy & Primary`;
+    const secondaryLabel = secondary ? 'Secondary Equipped' : eligibleSecondary ? (owned ? 'Equip Secondary' : `Buy & Secondary`) : 'Secondary N/A';
+    const primaryDisabled = primary || (!owned && !canBuy);
+    const secondaryDisabled = secondary || def.id===state.activeWeapon || (!owned && !canBuy) || !eligibleSecondary;
     card.innerHTML=`<div class="weapon-head">
         <div class="weapon-name">${def.name}</div>
         <div class="weapon-tag">${tag}</div>
       </div>
       <div class="weapon-desc">${def.desc}${req}<br>${def.passive?'Effect':'Damage'}: ${dmg} · Cooldown: ${Math.round(getWeaponCooldown(def.id))}ms${fuel}${food}</div>
-      <button class="weapon-btn" ${active||(!owned&&!canBuy)?'disabled':''}>${active?'Equipped':owned?'Equip':'Buy & Equip'}</button>`;
-    card.querySelector('button').addEventListener('click',()=>buyOrEquipWeapon(def.id));
+      <div class="weapon-actions">
+        <button class="weapon-btn" ${primaryDisabled?'disabled':''}>${primaryLabel}</button>
+        <button class="weapon-btn" ${secondaryDisabled?'disabled':''}>${secondaryLabel}</button>
+      </div>`;
+    const buttons=card.querySelectorAll('button');
+    buttons[0].addEventListener('click',()=>buyOrEquipWeapon(def.id,'primary'));
+    buttons[1].addEventListener('click',()=>buyOrEquipWeapon(def.id,'secondary'));
     card.insertAdjacentHTML('beforeend',infinityControls);
     const slider=card.querySelector('.infinity-radius-slider');
     if(slider)slider.addEventListener('input',()=>setInfinityRadius(Number(slider.value),true));
@@ -3140,10 +3177,11 @@ window.setInfinityRadius = function(radius,silent=false){
   if(!silent)updateStationUI();
 };
 
-window.buyOrEquipWeapon = function(id){
+window.buyOrEquipWeapon = function(id,slot='primary'){
   if(!state)return;
   const def=getWeaponDef(id);
   if(!state.purchasedWeapons)state.purchasedWeapons={laser:true};
+  // Purchase if necessary
   if(!state.purchasedWeapons[id]){
     if(def.requiresFarms&&countActiveFarms()<def.requiresFarms){
       stationMsg(`${def.name} needs ${def.requiresFarms} active farms first.`,'var(--red)');
@@ -3158,14 +3196,39 @@ window.buyOrEquipWeapon = function(id){
     state.credits-=def.cost;
     state.purchasedWeapons[id]=true;
   }
-  if(state.activeWeapon==='infinity'&&id!=='infinity')state.infinityActive=false;
-  if(state.activeWeapon==='timestop'&&id!=='timestop'){
-    state.timeStopActive=false;
-    releasePendingTimeStopFuel();
+
+  // Equip into requested slot
+  if(slot==='secondary'){
+    if(id===state.activeWeapon){
+      stationMsg(`${def.name} is already your primary weapon.`,'var(--red)');
+      notify(`${def.name} is already your primary weapon.`,'var(--red)');
+      return;
+    }
+    if(!isSecondaryWeaponId(id)){
+      stationMsg(`${def.name} cannot be equipped as a secondary weapon.`,'var(--red)');
+      notify(`${def.name} cannot be equipped as a secondary weapon.`,'var(--red)');
+      return;
+    }
+    state.secondaryWeapon = id;
+    stationMsg(`${def.name} equipped as secondary.`,'var(--green)');
+    notify(`${def.name} equipped as secondary.`,'var(--green)');
+  } else {
+    // equipping primary
+    if(state.activeWeapon==='infinity'&&id!=='infinity')state.infinityActive=false;
+    if(state.activeWeapon==='timestop'&&id!=='timestop'){
+      state.timeStopActive=false;
+      releasePendingTimeStopFuel();
+    }
+    // if the chosen primary is currently secondary, clear secondary
+    if(state.secondaryWeapon===id) state.secondaryWeapon=null;
+    state.activeWeapon=id;
+    stationMsg(`${def.name} equipped.`,'var(--green)');
+    notify(`${def.name} equipped.`,'var(--green)');
   }
-  state.activeWeapon=id;
-  stationMsg(`${def.name} equipped.`,'var(--green)');
-  notify(`${def.name} equipped.`,'var(--green)');
+
+  // Don't allow primary and secondary to be the same
+  if(state.secondaryWeapon===state.activeWeapon) state.secondaryWeapon=null;
+
   if(activePlanet)openPlanetPanel(activePlanet,activePlanetType||'planet');
   updateStationUI();updateHUD();saveState();
 };
@@ -4323,8 +4386,10 @@ function makeEnemyLaser(e){
 
 function makePlayerLaser(s,weaponId='laser'){
   const def=getWeaponDef(weaponId);
+  // support optional damage override as third arg
+  const damageOverride = arguments.length>2 ? arguments[2] : undefined;
   if(weaponId==='pulse'){
-    return {
+    const obj = {
       type:'pulse',
       x:s.x,y:s.y,
       radius:18,
@@ -4334,6 +4399,8 @@ function makePlayerLaser(s,weaponId='laser'){
       hitIds:{},
       fromEnemy:false,
     };
+    if(damageOverride!==undefined) obj.damage = damageOverride;
+    return obj;
   }
   if(weaponId==='flak'){
     const pellets=[];
@@ -4341,18 +4408,22 @@ function makePlayerLaser(s,weaponId='laser'){
       const spread=(-0.42)+(0.84*(i/Math.max(1,FLAK_PELLETS-1)))+rnd(-0.035,0.035);
       const a=s.angle+spread;
       const speed=rnd(8.2,11.2);
-      pellets.push({
+      const p = {
         x:s.x+Math.cos(a)*17,y:s.y+Math.sin(a)*17,
         vx:Math.cos(a)*speed+s.vx*0.16,vy:Math.sin(a)*speed+s.vy*0.16,
         life:Math.round(FLAK_RANGE/speed),
         maxLife:Math.round(FLAK_RANGE/speed),
         hitIds:{},
-      });
+      };
+      if(damageOverride!==undefined) p.damage = damageOverride;
+      pellets.push(p);
     }
     state.flakBursts.push({x:s.x,y:s.y,angle:s.angle,created:performance.now(),life:180,pellets});
-    return {type:'flak',pellets,life:28,maxLife:28,fromEnemy:false};
+    const obj = {type:'flak',pellets,life:28,maxLife:28,fromEnemy:false};
+    if(damageOverride!==undefined) obj.damage = damageOverride;
+    return obj;
   }
-  return {
+  const laser={
     type:weaponId,
     x:s.x+Math.cos(s.angle)*16,
     y:s.y+Math.sin(s.angle)*16,
@@ -4362,6 +4433,8 @@ function makePlayerLaser(s,weaponId='laser'){
     maxLife:def.life||LASER_LIFE,
     fromEnemy:false,
   };
+  if(damageOverride!==undefined) laser.damage = damageOverride;
+  return laser;
 }
 
 function findBeamTarget(){
@@ -4499,6 +4572,39 @@ function fireLaser(){
   if(def.fuelCost)state.fuel=Math.max(0,state.fuel-def.fuelCost);
   state.lastPlayerShot = now;
   state.playerLasers.push(makePlayerLaser(state.ship,weaponId));
+  // attempt to fire secondary weapon (nerfed)
+  const secId = state.secondaryWeapon;
+  if(secId && secId!==weaponId && isSecondaryWeaponId(secId)){
+    const secDef = getWeaponDef(secId);
+    const secCd = getSecondaryWeaponCooldown(secId);
+    if(now - (state.lastPlayerSecondaryShot||0) >= secCd){
+      if(secDef.fuelCost && state.fuel < secDef.fuelCost){
+        // not enough fuel for secondary -> skip
+      } else {
+        if(secDef.fuelCost) state.fuel = Math.max(0,state.fuel-secDef.fuelCost);
+        state.lastPlayerSecondaryShot = now;
+        const secDmg = getSecondaryWeaponDamage(secId);
+        state.playerLasers.push(makePlayerLaser(state.ship,secId,secDmg));
+      }
+    }
+  }
+}
+
+function fireSecondary(){
+  if(!state||!gameRunning||gameOver||gamePaused) return;
+  const secId = state.secondaryWeapon;
+  if(!secId) return;
+  const def = getWeaponDef(secId);
+  const now = performance.now();
+  // prevent firing passive/toggle weapons as secondary
+  if(def.passive){ notify(`${def.name} cannot be fired as a secondary.`, 'var(--red)'); return; }
+  const secCd = getSecondaryWeaponCooldown(secId);
+  if(now - (state.lastPlayerSecondaryShot||0) < secCd) return;
+  if(def.fuelCost && state.fuel < def.fuelCost){ notify(`Need ${def.fuelCost} fuel to fire ${def.name}.`,'var(--red)'); return; }
+  if(def.fuelCost) state.fuel = Math.max(0,state.fuel-def.fuelCost);
+  state.lastPlayerSecondaryShot = now;
+  const secDmg = getSecondaryWeaponDamage(secId);
+  state.playerLasers.push(makePlayerLaser(state.ship,secId,secDmg));
 }
 
 function damagePlayer(amount,label){
@@ -5017,7 +5123,7 @@ function updateEnemies(dt, now){
         if(l.hitIds[r.id])continue;
         if(Math.hypot(l.x-r.x,l.y-r.y)<l.radius+12){
           l.hitIds[r.id]=true;
-          r.hp -= getWeaponDamage('pulse');
+          r.hp -= (l.damage!==undefined?l.damage:getWeaponDamage('pulse'));
           if(r.hp<=0&&!r._bountyPaid){
             r._bountyPaid=true;
             state.raidersDestroyedSession=(state.raidersDestroyedSession||0)+1;
@@ -5030,7 +5136,7 @@ function updateEnemies(dt, now){
         if(l.hitIds[e.id])continue;
         if(Math.hypot(l.x-e.x,l.y-e.y)<l.radius+12){
           l.hitIds[e.id]=true;
-          e.hp -= getWeaponDamage('pulse');
+          e.hp -= (l.damage!==undefined?l.damage:getWeaponDamage('pulse'));
           e.state = 'attack';
           if(e.hp<=0&&!e._bountyPaid){
             e._bountyPaid=true;
@@ -5056,7 +5162,7 @@ function updateEnemies(dt, now){
             p.hitIds[r.id]=true;
             const dx=r.x-state.ship.x,dy=r.y-state.ship.y,dist=Math.hypot(dx,dy)||1;
             r.vx+=dx/dist*FLAK_KNOCKBACK;r.vy+=dy/dist*FLAK_KNOCKBACK;
-            damageTarget(r,'raider',getWeaponDamage('flak'));
+          damageTarget(r,'raider',(p.damage!==undefined?p.damage:getWeaponDamage('flak')));
             p.life=0;
             break;
           }
@@ -5067,37 +5173,37 @@ function updateEnemies(dt, now){
             p.hitIds[e.id]=true;
             const dx=e.x-state.ship.x,dy=e.y-state.ship.y,dist=Math.hypot(dx,dy)||1;
             e.vx+=dx/dist*FLAK_KNOCKBACK;e.vy+=dy/dist*FLAK_KNOCKBACK;
-            damageTarget(e,'enemy',getWeaponDamage('flak'));
+            damageTarget(e,'enemy',(p.damage!==undefined?p.damage:getWeaponDamage('flak')));
             p.life=0;
           }
         }
         const admiral=state.fleetAdmiral;
         if(admiral&&admiral.hp>0&&p.life>0&&!p.hitIds.fleetAdmiral&&Math.hypot(p.x-admiral.x,p.y-admiral.y)<104){
           p.hitIds.fleetAdmiral=true;
-          damageFleetAdmiral(getWeaponDamage('flak')*0.55);
+          damageFleetAdmiral((p.damage!==undefined?p.damage:getWeaponDamage('flak'))*0.55);
           p.life=0;
         }
       }
       return (l.pellets||[]).some(p=>p.life>0);
     }
     for(const r of (state.tradeRaiders||[])){
-      if(Math.hypot(l.x-r.x,l.y-r.y)<(l.type==='railgun'?9:12)){
-        if(l.type==='gravity')spawnGravityWell(l.x,l.y);
-        else damageTarget(r,'raider',getWeaponDamage(l.type||'laser'));
+  if(Math.hypot(l.x-r.x,l.y-r.y)<(l.type==='railgun'?9:12)){
+  if(l.type==='gravity')spawnGravityWell(l.x,l.y);
+  else damageTarget(r,'raider',(l.damage!==undefined?l.damage:getWeaponDamage(l.type||'laser')));
         return false;
       }
     }
     for(const e of state.enemies){
-      if(Math.hypot(l.x-e.x,l.y-e.y)<(l.type==='railgun'?9:12)){
-        if(l.type==='gravity')spawnGravityWell(l.x,l.y);
-        else damageTarget(e,'enemy',getWeaponDamage(l.type||'laser'));
+  if(Math.hypot(l.x-e.x,l.y-e.y)<(l.type==='railgun'?9:12)){
+  if(l.type==='gravity')spawnGravityWell(l.x,l.y);
+  else damageTarget(e,'enemy',(l.damage!==undefined?l.damage:getWeaponDamage(l.type||'laser')));
         return false;
       }
     }
     const admiral=state.fleetAdmiral;
     if(admiral&&admiral.hp>0&&Math.hypot(l.x-admiral.x,l.y-admiral.y)<(l.type==='railgun'?96:110)){
-      if(l.type==='gravity')spawnGravityWell(l.x,l.y);
-      else damageFleetAdmiral(getWeaponDamage(l.type||'laser'));
+  if(l.type==='gravity')spawnGravityWell(l.x,l.y);
+  else damageFleetAdmiral((l.damage!==undefined?l.damage:getWeaponDamage(l.type||'laser')));
       return false;
     }
     return true;
