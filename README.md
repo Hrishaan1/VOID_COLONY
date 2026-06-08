@@ -1,178 +1,219 @@
-# VOID COLONY — Space Combat & Colonization Simulator
+# VOID COLONY — Space Explorer
 
-A high-fidelity, browser-based space exploration, economic, and combat simulation built with vanilla JavaScript and HTML5 Canvas.
+An arcade-style space colonization and economy simulation game built entirely for the browser. Pilot your ship through a dynamically simulated solar system, establish thriving resource colonies on planets and moons, trade in speculative financial markets, and defend your infrastructure from hostile enemy fleets.
 
-## 🌌 Overview
-In **VOID COLONY**, you command a lone colony ship in a dynamic solar system. Balance the high-stakes economy of fuel and food while defending your territory from enemy raiders that actively seek to capture your planets and destroy your modules.
+Live Demo: [void-colony.org](https://void-colony.org)
 
-## ⚔️ Combat & Defense Features (New!)
-* **Laser Weaponry:** Engage enemies with high-velocity cyan laser bolts (SPACE or Mouse Click). Includes a 220ms cooldown system for balanced firing.
-* **Enemy Raider AI:** Raiders spawn every 45 seconds, roaming the system to capture planets. They are peaceful unless provoked or unless you attempt to reclaim a stolen colony.
-* **Mouse Aim Mode:** Press `C` to toggle a precision targeting mode where the ship rotates to face your cursor, complete with a dotted targeting line and crosshair.
-* **Hull Integrity:** Your ship features a persistent health bar. Take damage from enemy fire and benefit from a slow automatic regeneration (2 HP/sec).
+## 🌌 Core Features
 
-## 📈 Economic & Planetary Simulation
-* **Credits Economy:** Everything has a cost—from colonizing (20¢) to building specialized modules like Farms (50¢) or Fuel Generators (80¢).
-* **Dynamic Food Market:** Food prices fluctuate every 60s. Use the HUD slider to set your "Sell Ratio" and automate your income based on market trends.
-* **Solar Bonds:** A speculative mini-game where you can buy/sell bonds on a 30s volatility cycle to build your credit reserves.
-* **Proximity Harvesting:** Farm modules require you to remain within a specific orbital range to successfully harvest resources.
+- **Real-time Orbital Physics:** A living solar system featuring a central star with planets and moons locked into real-time circular orbital rings. Proximity mechanics tie your ship seamlessly into a planet's drift vector.
+- **Dynamic Module Economy:** Land on celestial bodies to build modular infrastructure. Utilize structural slots dependent on planetary size to scale up your operations:
+  - **Farms:** Generate raw Food cargo passively (requires player proximity to harvest).
+  - **Fuel Generators:** Recharge ship fuel stores at the cost of your food supply.
+  - **Laboratories:** Unlock a multi-tier permanent research tree to upgrade your ship, automation, and tech.
+- **Advanced Space Station & Weapon Systems:** Dock at the neutral space station to purchase, equip, and customize advanced weaponry including the Pulse Wave, Railgun, Gravity Well Launcher, Kinetic Flak Cannon, Solar Beam Overdrive, Overcharged Shield Burst, and exotic passive abilities like **Infinity** and **Time Stop**.
+- **Logistics & Trade Networks:** Purchase AI-controlled freighters to automate food hauling from your colonies back to the central hub for steady credit income. Defend them from raider ambushes in dedicated escort missions.
+- **Epic Boss Encounters & Diplomacy:** Face off against world-threatening bosses like the resource-siphoning **Leviathan Mothership**—which can be bargained with via an RPG-style dialogue system—and the massive **Fleet Admiral Command Ship**.
+- **Cross-Platform Control Interfaces:** Play with highly accurate standard mouse-aim tracking, classic keyboard arcade mechanics, or use the specialized virtual joysticks and touch configurations optimized for mobile screens.
 
-## 🕹️ Controls
-| Action | Keyboard | Mouse / Touch |
-| :--- | :--- | :--- |
-| **Thrust / Rotate** | `WASD` | Joystick (Mobile) |
-| **Precision Aim** | `C` (Toggle) | Mouse Movement |
-| **Fire Laser** | `Space` | Mouse Click / 🔴 Button |
-| **Interact/Dock** | `E` | ⬡ DOCK Button |
-| **Map** | `M` | 🗺 MAP Button |
-| **Pause** | `P` | ⏸ PAUSE Button |
+---
 
-## 🛠️ Technical Implementation
-* **State Persistence:** Automatically saves your fleet status, credits, and colony progress to `localStorage` every 5 seconds.
-* **Procedural Systems:** Generates unique star systems with custom palettes, moon systems, and real-time orbital trigonometry.
-* **Layered Rendering:** Uses dual HTML5 Canvases to handle high-frequency physics updates and background star-fields separately.
+## 🎮 How to Play & Controls
 
-## Patch Notes
-- **Future Update - Baby Mode**
-    - Much easier for people who are bad at the game
-    - weapons instant kill raiders
-    - black flash cannot be missed
-    - Everything is cheaper, and you gain more money from all income sources
-- **v1.17 - Fleet Admiral Ship**
-    - Added the Fleet Admiral Ship as a new high-threat boss encounter with a warning and warp-in effect
-    - The Fleet Admiral is larger than the Leviathan, uses dark gold command-ship trim, and hunts the most populated colony
-    - Carrier Inbound opens hangar bays every 20 seconds and launches 2-3 enemy raiders
-    - Laser Strike locks onto the player, shows a red targeting warning, then fires a continuous high-damage beam
-    - Infinity blocks the admiral laser, causing the beam to stop, distort, and split at the barrier perimeter
-- **v1.16 - Time Stop**
-    - Added Time Stop as a late-game passive station weapon
-    - Press fire with Time Stop equipped to freeze planets, freighters, escorts, raiders, and hostile fire
-    - Time Stop consumes food rapidly while active and collapses when reserves run out
-    - Black Flash rewards gained during stopped time are held and released when time resumes
-- **v1.15 - Expanded Research Tree**
-    - Added tier-2 and tier-3 Laboratory technologies for logistics, construction, jump travel, shields, and exotic weapons
-    - New research can expand fuel and food capacity, reduce build and jump costs, improve freighters, and strengthen advanced weapons
-    - Older saves automatically receive default levels for the new technologies
-- **v1.14 - Infinity**
-    - Added Infinity as a passive space station weapon
-    - Press fire with Infinity equipped to toggle a repulsion field around the ship
-    - Enemy projectiles and raiders are pushed away when they press into the field
-    - Infinity radius can be customized with a station slider and higher food activation costs
-    - Active Infinity drains 0.5 food per second
-- **v1.13 - Advanced Weapon Systems**
-    - Added Gravity Well Launcher, Kinetic Flak Cannon, Solar Beam Overdrive, and Overcharged Shield Burst
-    - Gravity wells pull nearby raiders into a temporary trap for easier Divergent Ram setups
-    - Kinetic Flak Cannon fires short-range shrapnel with heavy knockback and unlocks after 3 active farms
-    - Solar Beam Overdrive channels scaling damage while consuming food and locking ship movement
-    - Overcharged Shield Burst clears enemy projectiles and disables nearby raider engines as a panic button
-- **v1.12 - Leviathan Diplomacy**
-    - Massive hostile Motherships can warp in an siphon nearby colony resources
-    - added negotiation choices using Credits, Food, raider kills, or Laboratory Modules
-    - Failed diplomacy starts component combat against the Leviathan engines and hangar
-    - Quantam Rewind can revive a destroyed hull by sacrificing Credits or a building
-- **v1.11 - Divergent Ram**
-    - Added high-speed Collision Drive impacts against enemy raiders
-    - Divergent Ram gives fuel, triggers hit stop, and vaporizes most raiders
-    - Black Flash impacts distort targets with dark lightning and residual ship afterimages
-    - Low-speed enemy collisions now punish the hull instead of becoming free damage
-- **v1.10 - Trade Routes & Freighters**
-    - Added purchasable AI freighters after you establish multiple colonies
-    - Freighters haul food from farm colonies to the central hub for credits
-    - Added escort missions when raiders ambush loaded freighters
-    - Freighters are bulkier, slower variants of the player ship and appear on the map
-- **v1.9 - Void Events**
-    - Added random Solar Flares that temporarily disrupt the map or mouse aim
-    - Added mineable passing comets wiht large credit rewards if you match velocity
-    - Added rare paired wormholes that shortcut across distant solar orbits
-- **v1.8 - Space Station Weapons**
-    - Added a neutral space station near the system center
-    - Dock at the station to buy and equip Pulse Wave or Railgun weapons
-    - Pulse Wave deals short-range area damage; Railgun hits hard at long range and consumes fuel
-- **v1.7 - Laboratory Research**
-    - Added Laboratory modules and a permanent research tree
-    - Research can improve engines, farm automation, shields, weapons, and max hull integrity
-    - Shielding adds a passive recharging blue bar above hull integrity
-- **v1.6 - Galaxy Starmap**
-    - Added a draggable galaxy starmap with selectable nearby solar systems
-    - Jump costs scale with each system's distance from the home system
-    - Visited systems and systems with colonies are marked on the starmap
-    - New nearby systems appear as you push deeper into the galaxy
-- **v1.5.2.1 - Laser Firing Bug Fix**
-    - Lasers weren't firing due to cooldown bug - has been fixed
-- **v1.5.2 - Combat Rebalance**
-    - Enemy ships now roam peacefully - they won't attack unprovoked
-    - Enemy ships retaliate only if you shoot them first
-    - Reclaiming an enemy planet triggers a retaliator ship to spawn
-    - Ambient roamers drift between planets instead of idling
-    - Hull integrity regenerates slowly over time (2 HP/sec)
-- **v1.5.1 - Mouse Aim Mode**
-    - Press C to toggle mouse aim - ship rotates to face your cursor
-    - Click to fire in mouse aim mode (crosshair cursor shown)
-    - Dotted targeting line drawn from ship to cursor
-    - Thrust and brake controls unchanged in mouse mode
-- **v1.5 - Enemy Raiders & Combat**
-    - Enemy raider ships spawn every 45s (up to 5 at a time)
-    - Enemies fly to planets, capture them, and destroy your modules
-    - `SPACE` / 🔴 button fires cyan laser bolts at enemies
-    - Destroying an enemy earns 40¢ bounty
-    - Hull integrity bar added — take damage from enemy fire
-    - Enemy-owned planets shown with red orbit ring
-    - Reclaim captured planets for 80¢ from the planet panel
-    - Enemy ships display HP bar and claim-progress bar in world
-- **v1.4.1 - Solar Bonds**
-    - Added Solar Bond market — buy & sell speculative bonds for profit
-    - Bond prices fluctuate every 30 seconds with random surges & crashes
-    - Portfolio view shows unrealised P&L, average buy price & price chart
-    - Bond market accessible from Pause menu
-- **v1.4 - Economy & Menus**
-    - Added Credits currency — colonising costs 20¢, farms 50¢, fuel gens 80¢
-    - Food Market with fluctuating prices (changes every 60s)
-    - Food sell-ratio slider in HUD — split harvest between stock and credits
-    -Fixed: sell ratio now correctly scales with number of farms
-    - Pause menu (P key or ⏸ button) — pause, access markets, quit to title
-    - Patch Notes screen accessible from pause & title screen
-- **v1.3.2 - Farm Harvesting**
-    - Farms only produce food when ship is within harvest range
-    - Green dashed harvest-range ring shown around farm planets
-    - Farm slot label shows live harvesting/idle status in planet panel
-- **v1.3.1 - Moon Balance**
-    - Moon sphere of influence reduced to 40% of planet proximity
-    - Moon interact range halved — no longer hijacks planet approach
-    - Moon orbits start further from planet surface (60px min)
-    - Wider spacing between multiple moons around the same planet
-- **v1.3 - Proximity & Resource Update**
-    - Orbital co-movement: entering proximity locks ship to planet drift exactly
-    - Planet collision physics — ship bounces off surfaces
-    - Fuel gens cost 1 food/sec while actively refueling
-    - Passive food consumption added (crew upkeep: 0.08/sec)
-    - Food supply warning notification when reserves hit zero
-- **v1.2.1 - Map Fixes**
-    - Fixed map canvas only showing top strip — now fills panel correctly
-    - Map reads wrapper dimensions after flex layout is applied
-    - Map auto-fits to system scale on open via requestAnimationFrame
-    - Mobile: map opens fullscreen; touch pan & pinch-zoom supported
-- **v1.2 - Solar System & Map**
-    - Full solar system layout — named star at centre, planets in orbital rings
-    - Planets orbit in real time; moons orbit planets
-    - Moons colonisable with 1 slot each; planet panel lists its moons
-    - Floating draggable map (M) with scroll-to-zoom
-    - Off-screen arrows point to colonised planets & moons
-- **v1.1.1 - Mobile Support**
-    - Virtual joystick (bottom-left) for steering & thrust on touch screens
-    - `DOCK` / `BRAKE` / `MAP` action buttons (bottom-right)
-    - Planet panel slides up from bottom on small screens
-    - Touch-specific controls shown on title screen for mobile users
-- **v1.1 - Modules**
-    - Farm modules generate food passively (6s build time)
-    - Fuel generator modules refuel ship when docked (8s build)
-    - Module build shown as progress bar in planet panel
-    - Pulsing yellow dots above planet while module is under construction
-- **v1.0 - Launch**
-    - Arcade ship controls — thrust, rotate, brake
-    - Planet colonisation with slot-based module system
-    - Larger planets have more slots (up to 5)
-    - Auto-save to browser localStorage every 5 seconds
+### Keyboard & Mouse Controls
+| Input | Action |
+| :--- | :--- |
+| **W** / **↑** | Thrust Forward |
+| **A** / **D** or **←** / **→** | Rotate Ship Direction |
+| **S** / **↓** | Engage Retro-Brakes (Slow Down) |
+| **E** | Interact / Dock with nearby Planet, Moon, or Space Station |
+| **SPACE** / **Left Click** | Fire Currently Equipped Active Weapon |
+| **C** | Toggle Mouse Aim Mode (Ship tracks cursor position) |
+| **M** | Toggle Interactive Solar System Map overlay |
+| **P** | Pause / Open Market and Portfolio Interface |
 
+### Mobile Touch Controls
+- **Left Virtual Joystick:** Continuous steering and thrust management.
+- **DOCK Button:** Contextual interaction with celestial bodies in immediate proximity.
+- **BRAKE Button:** Instantly drops current velocity.
+- **MAP Button:** Toggles the full-screen interactive planetary navigation display.
 
-## 📜 License
-Open-source under the MIT License. Contributions and forks are welcome!
+---
+
+## 🛠️ Architecture & System Design
+
+The game engine is built around a lightweight, native JavaScript web configuration utilizing the HTML5 Canvas API for smooth 60 FPS vector rendering, paired with explicit UI overlays driven by CSS Flexbox layouts.
+
+### 1. State Persistence
+An automated auto-save sequence syncs the state of the player's core attributes (`Hull Integrity`, `Fuel`, `Food Supply`, `Credits`), established colony tracking, research progression, and building counts to browser-level `localStorage` every 5 seconds.
+
+### 2. Proximity & Docking Matrices
+Planets enforce a "Sphere of Influence". When a ship breaks into this boundary, a tracking matrix dampens absolute spatial coordinates and anchors the ship relative to the parent planet's current orbital velocity drift vector. Collision envelopes trigger physical bounce responses on direct surface contact, which can be weaponized into high-velocity **Divergent Rams**.
+
+### 3. Asynchronous Market Tasks
+Interval threads decouple the game loops from economic shifts. The Food Market updates prices every 60s using localized trends, while the Solar Bond ledger tracks moving averages and portfolios over a separate 30s polling thread.
+
+---
+
+## 📝 Changelog & Patch Notes
+
+### v1.17 — Fleet Admiral Ship
+- Added the Fleet Admiral Ship as a new high-threat boss encounter with a distinct warning and warp-in effect.
+- The Fleet Admiral is larger than the Leviathan, uses dark gold command-ship trim, and hunts the player's most populated colony.
+- **Carrier Inbound:** Opens hangar bays every 20 seconds and launches 2-3 enemy raiders.
+- **Laser Strike:** Locks onto the player, shows a red targeting warning, then fires a continuous high-damage beam.
+- **Infinity Synergy:** Infinity blocks the admiral laser, causing the beam to stop, distort, and split at the barrier perimeter.
+
+### v1.16 — Time Stop
+- Added Time Stop as a late-game passive station weapon.
+- Press fire with Time Stop equipped to freeze planets, freighters, escorts, raiders, and hostile fire in place.
+- Time Stop consumes food rapidly while active and collapses when reserves run out.
+- Black Flash rewards gained during stopped time are held and released when time resumes.
+
+### v1.15 — Expanded Research Tree
+- Added tier-2 and tier-3 Laboratory technologies for logistics, construction, jump travel, shields, and exotic weapons.
+- New research can expand fuel and food capacity, reduce build and jump costs, improve freighters, and strengthen advanced weapons.
+- Older saves automatically receive default levels for the new technologies.
+
+### v1.14 — Infinity
+- Added Infinity as a passive space station weapon.
+- Press fire with Infinity equipped to toggle a repulsion field around the ship.
+- Enemy projectiles and raiders are pushed away when they press into the field.
+- Infinity radius can be customized with a station slider and scales with higher food activation costs.
+- Active Infinity drains 0.5 food per second.
+
+### v1.13 — Advanced Weapon Systems
+- Added Gravity Well Launcher, Kinetic Flak Cannon, Solar Beam Overdrive, and Overcharged Shield Burst.
+- **Gravity Well Launcher:** Pulls nearby raiders into a temporary trap for easier Divergent Ram setups.
+- **Kinetic Flak Cannon:** Fires short-range shrapnel with heavy knockback; unlocks after 3 active farms.
+- **Solar Beam Overdrive:** Channels scaling damage while consuming food and locking ship movement completely stationary.
+- **Overcharged Shield Burst:** Clears enemy projectiles and disables nearby raider engines as a defensive panic button.
+
+### v1.12 — Leviathan Diplomacy
+- Massive hostile Motherships can warp in and siphon nearby colony resources.
+- Added negotiation choices using Credits, Food, raider kills, or Laboratory Modules.
+- Failed diplomacy starts component combat against the Leviathan engines and hangar.
+- **Quantum Rewind:** Can revive a destroyed hull by sacrificing Credits or a built module.
+
+### v1.11 — Divergent Ram
+- Added high-speed Collision Drive impacts against enemy raiders.
+- Divergent Ram gives fuel back, triggers hit stop, and vaporizes most raiders on impact.
+- **Black Flash:** High-speed impacts distort targets with dark lightning effects and leave residual ship afterimages.
+- Low-speed enemy collisions now punish the hull instead of becoming free damage.
+
+### v1.10 — Trade Routes & Freighters
+- Added purchasable AI freighters unlocked after you establish multiple colonies.
+- Freighters automatically haul food from farm colonies to the central hub for credit gains.
+- Added escort missions when raiders attempt to ambush loaded freighters.
+- Freighters are bulkier, slower variants of the player ship and appear directly on the map display.
+
+### v1.9 — Void Events
+- Added random Solar Flares that temporarily disrupt the overlay map or mouse aim functions.
+- Added mineable passing comets with large credit rewards if you match their orbital velocity.
+- Added rare paired wormholes that shortcut across distant solar orbits.
+
+### v1.8 — Space Station Weapons
+- Added a neutral space station near the system center.
+- Dock at the station to buy and equip Pulse Wave or Railgun weapons.
+- Pulse Wave deals short-range area-of-effect damage; Railgun hits hard at long range and consumes ship fuel.
+
+### v1.7 — Laboratory Research
+- Added Laboratory modules and a permanent research progression tree.
+- Research can improve engine output, farm automation, shields, weapons, and maximum hull integrity.
+- Shielding adds a passive recharging blue shield bar layered above hull integrity.
+
+### v1.6 — Galaxy Starmap
+- Added a draggable galaxy starmap with selectable nearby solar systems.
+- Jump costs scale dynamically with each system's distance from the home system coordinates.
+- Visited systems and systems with active colonies are permanently marked on the starmap.
+- New nearby systems appear dynamically as you push deeper into the galaxy.
+
+### v1.5.2.1 — Laser Firing Bug Fix
+- Lasers weren't firing due to a weapon cooldown bug—this has been fixed.
+
+### v1.5.2 — Combat Rebalance
+- Enemy ships now roam peacefully—they won't attack unprovoked.
+- Enemy ships retaliate only if you shoot them first.
+- Reclaiming an enemy planet triggers a retaliator ship to spawn.
+- Ambient roamers drift naturally between planets instead of idling in place.
+- Hull integrity now regenerates slowly over time (2 HP/sec).
+
+### v1.5.1 — Mouse Aim Mode
+- Press `C` to toggle mouse aim — ship rotates to face your cursor.
+- Click to fire in mouse aim mode (crosshair cursor shown).
+- Dotted targeting line drawn from ship to cursor.
+- Thrust and brake controls remain unchanged in mouse mode.
+
+### v1.5 — Enemy Raiders & Combat
+- Enemy raider ships spawn every 45s (up to 5 at a time).
+- Enemies fly to planets, capture them, and destroy your modules.
+- `SPACE` / 🔴 button fires cyan laser bolts at enemies.
+- Destroying an enemy earns a 40¢ bounty.
+- Added Hull Integrity health tracking — takes damage from enemy fire.
+- Enemy-owned planets are marked with a red orbit ring display.
+- Reclaim captured planets for 80¢ from the planetary panel interface.
+- Enemy ships display a live HP bar and claim-progress bar in the world view.
+
+### v1.4.1 — Solar Bonds
+- Added Solar Bond market — buy & sell speculative bonds for profit.
+- Bond prices fluctuate every 30 seconds with random surges & crashes.
+- Portfolio view shows unrealised P&L, average buy price & live price chart.
+- Bond market fully accessible directly from the Pause menu.
+
+### v1.4 — Economy & Menus
+- Added Credits currency tracking — colonising costs 20¢, farms 50¢, fuel gens 80¢.
+- Food Market introduced with fluctuating baseline prices updating every 60s.
+- Food sell-ratio slider integrated into HUD — split harvest between stock and credits.
+- Fixed: sell ratio now correctly scales with the absolute number of farms.
+- Pause menu implemented (`P` key or ⏸ button) — access markets, view stats, or quit to title.
+- Patch Notes screen made accessible from both the pause overlay and the title menu.
+
+### v1.3.2 — Farm Harvesting
+- Farms only produce food when the ship is within the specified harvest range.
+- Green dashed harvest-range ring rendered around farm planets.
+- Farm slot label shows live harvesting/idle status updates in the planet panel.
+
+### v1.3.1 — Moon Balance
+- Moon sphere of influence reduced to 40% of standard planet proximity.
+- Moon interact range halved — no longer hijacks planet approach sequences.
+- Moon orbits start further from planet surface (60px minimum radius boundary).
+- Wider spatial spacing enforced between multiple moons around the same planet.
+
+### v1.3 — Proximity & Resource Update
+- Orbital co-movement: entering proximity locks ship to planet drift exactly.
+- Planet collision physics implementation — ship bounces off structural surfaces.
+- Fuel generators cost 1 food/sec while actively refueling the ship hull.
+- Passive food consumption added representing crew upkeep (0.08 units/sec).
+- Food supply warning notification triggers when reserves hit absolute zero.
+
+### v1.2.1 — Map Fixes
+- Fixed map canvas only showing top strip — now fills the panel correctly.
+- Map reads wrapper dimensions dynamically after CSS flex layouts are fully applied.
+- Map auto-fits to system scale on open via native `requestAnimationFrame`.
+- Mobile: map opens fullscreen; touch pan & pinch-zoom fully supported.
+
+### v1.2 — Solar System & Map
+- Full solar system layout — named star at center with distinct orbital rings.
+- Planets orbit in real time; moons follow designated planetary orbits.
+- Moons are colonizable with 1 infrastructure slot each; planet panel outlines its moons.
+- Floating draggable map (`M`) added with scroll-to-zoom and click-to-warp mechanics.
+- Off-screen tracking arrows point to current locations of colonized planets & moons.
+
+### v1.1.1 — Mobile Support
+- Virtual joystick (bottom-left HUD) for steering & thrust on touch screens.
+- Contextual `DOCK` / `BRAKE` / `MAP` action buttons added to the bottom-right layout.
+- Planet panel slides up dynamically from bottom layout on small screen dimensions.
+- Touch-specific controls explicitly mapped on the primary title screen for mobile players.
+
+### v1.1 — Modules
+- Farm modules generate food passively (6s build time mechanics).
+- Fuel generator modules refuel ship when docked safely (8s build time mechanics).
+- Module construction progress visualized via a dedicated progress bar in the planet panel.
+- Pulsing yellow dots display above planets while a module is under active construction.
+
+### v1.0 — Launch
+- Arcade ship physics framework — thrust, rotate, and manual braking.
+- Planet colonization engine with modular slot-based mechanics.
+- Larger planets feature more operational slots (up to 5 maximum).
+- Auto-save engine pushes state to browser `localStorage` every 5 seconds.
+- Animated twinkling star field background environment mapping.
