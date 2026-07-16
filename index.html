@@ -1836,13 +1836,13 @@ window.addEventListener('keydown',e=>{
   if((e.key==='m'||e.key==='M')&&gameRunning&&!gameOver)toggleMap();
   if((e.key==='c'||e.key==='C')&&gameRunning&&!gameOver&&!gamePaused) toggleMouseAim();
   // Q fires secondary weapon independently
-  if((e.key==='q'||e.key==='Q')&&gameRunning&&!gameOver&&!gamePaused){ e.preventDefault(); if(state) state.secondaryFireHeld=true; fireSecondary(); }
+  if(((e.key==='q'||e.key==='Q')||e.code==='KeyQ')&&gameRunning&&!gameOver&&!gamePaused){ e.preventDefault(); if(state) state.secondaryFireHeld=true; fireSecondary(); }
   if((e.code==='Space'||e.key===' ')&&gameRunning&&!gameOver&&!gamePaused){ e.preventDefault(); state.fireHeld=true; fireLaser(); }
 });
 window.addEventListener('keyup',e=>{
   if(e.code==='Space'||e.key===' '){ keys[' ']=false; if(state)state.fireHeld=false; }
   else keys[e.key]=false;
-  if(e.key==='q'||e.key==='Q'){ if(state) state.secondaryFireHeld=false; }
+  if((e.key==='q'||e.key==='Q')||e.code==='KeyQ'){ if(state) state.secondaryFireHeld=false; }
 });
 
 // ===== TOUCH / MOBILE =====
@@ -4593,13 +4593,19 @@ function fireLaser(){
 function fireSecondary(){
   if(!state||!gameRunning||gameOver||gamePaused) return;
   const secId = state.secondaryWeapon;
-  if(!secId) return;
+  // Quick debug: if user presses Q and nothing happens, surface a hint
+  console.debug('fireSecondary() called — secId=', secId, 'gameRunning=', gameRunning, 'gamePaused=', gamePaused, 'gameOver=', gameOver);
+  if(!secId){ notify('No secondary weapon equipped. Open the station to buy or equip one.', 'var(--yellow)'); return; }
   const def = getWeaponDef(secId);
   const now = performance.now();
   // prevent firing passive/toggle weapons as secondary
   if(def.passive){ notify(`${def.name} cannot be fired as a secondary.`, 'var(--red)'); return; }
   const secCd = getSecondaryWeaponCooldown(secId);
-  if(now - (state.lastPlayerSecondaryShot||0) < secCd) return;
+  if(now - (state.lastPlayerSecondaryShot||0) < secCd){
+    const remaining=Math.ceil((secCd - (now - (state.lastPlayerSecondaryShot||0))));
+    notify(`${getWeaponDef(secId).name} recharging — ${remaining}ms`, 'var(--text)');
+    return;
+  }
   if(def.fuelCost && state.fuel < def.fuelCost){ notify(`Need ${def.fuelCost} fuel to fire ${def.name}.`,'var(--red)'); return; }
   if(def.fuelCost) state.fuel = Math.max(0,state.fuel-def.fuelCost);
   state.lastPlayerSecondaryShot = now;
