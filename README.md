@@ -57,6 +57,22 @@ Interval threads decouple the game loops from economic shifts. The Food Market u
 
 ## 📝 Changelog & Patch Notes
 
+### v1.18 — Deadly Sentencing (Domain Expansion)
+- Added **Deadly Sentencing**, Higuruma's Domain Expansion, as the ultimate primary weapon (Space Station, 15,000¢).
+- Activating the domain plunges the surrounding battlefield into **pitch black**, a sealed golden arena.
+- Inside the domain, **all attacks are forbidden** — your weapons and every trapped raider's weapons fall silent.
+- Trapped raiders are **bound inside the domain** and cannot exit, and no new hostiles can meaningfully enter.
+- An **interactive sentencing dialogue** opens automatically, charging the accused with crimes against international space treaties.
+- Each defendant responds with a random plea — they either **confess**, **stay silent**, or **deny**.
+- Listen to their testimony and **pick the response that matches** their plea:
+  - **Confess** → sentence them **GUILTY**.
+  - **Silent** → treat their silence as admission, sentence **GUILTY**.
+  - **Deny** → without proof, acquit them **NOT GUILTY**.
+- Deliver the matching verdict to earn the **Executioner's Sword**; a wrong ruling collapses the domain with no reward.
+- The moment you receive the sword, the **domain collapses** back to the normal battlefield.
+- With the sword active, the ship **pulsates gold** and your primary attack becomes a **dash forward that instantly obliterates** every raider in its path (no Black Flash).
+- The sword lasts **30 seconds**; the domain enters a **1-minute cooldown** that begins once the sword expires.
+
 ### v1.17 — Fleet Admiral Ship
 - Added the Fleet Admiral Ship as a new high-threat boss encounter with a distinct warning and warp-in effect.
 - The Fleet Admiral is larger than the Leviathan, uses dark gold command-ship trim, and hunts the player's most populated colony.

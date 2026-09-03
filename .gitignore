@@ -3,7 +3,7 @@
 .AppleDouble
 .LSOverride
 # Editor and local workspace state
-.vscode/*
+.vscode
 !.vscode/settings.json
 !.vscode/extensions.json
 !.vscode/launch.json

@@ -314,6 +314,7 @@
       <div class="stat-row"><div class="hud-label">💳 Credits</div><div class="credits-wrap"><span class="credit-pop" id="freighter-credit-pop"></span><div class="hud-value" id="credits-val" style="color:var(--yellow)">200</div></div></div>
       <div class="stat-row"><div class="hud-label">System</div><div class="hud-value" id="system-val">Sol Prime</div></div>
       <div class="stat-row"><div class="hud-label">Weapon</div><div class="hud-value" id="weapon-val">Cyan Laser</div></div>
+      <div class="stat-row"><div class="hud-label">⚖ Domain</div><div class="hud-value" id="domain-val" style="color:var(--text)">READY</div></div>
   <div class="stat-row"><div class="hud-label">Secondary</div><div class="hud-value" id="secondary-weapon-val">None</div></div>
       <div class="stat-row"><div class="hud-label">Colonies</div><div class="hud-value" id="colony-count">0</div></div>
       <div class="stat-row"><div class="hud-label">Freighters</div><div class="hud-value" id="freighter-count">0</div></div>
@@ -825,6 +826,22 @@
     <button class="overlay-btn" style="max-width:200px" onclick="closeMothershipDialogue()">[ ESC ] CLOSE</button>
   </div>
 
+  <!-- DEADLY SENTENCING / DOMAIN EXPANSION -->
+  <div class="overlay-screen" id="domain-screen">
+    <div class="overlay-title">⚖ DEADLY SENTENCING</div>
+    <div class="overlay-box" style="min-width:min(560px,92vw)">
+      <div class="dialogue-line" id="domain-defendant" style="text-align:center;color:var(--yellow)"></div>
+      <div class="dialogue-line" id="domain-crime" style="text-align:center"></div>
+      <div class="dialogue-line" id="domain-line"></div>
+      <div style="font-size:10px;color:var(--text);line-height:1.6">
+        Your reserves: <span id="domain-reserves" style="color:var(--yellow)">—</span>
+      </div>
+      <div class="dialogue-actions" id="domain-actions"></div>
+      <div id="domain-msg" style="font-size:10px;text-align:center;margin-top:10px;min-height:14px;color:var(--yellow)"></div>
+    </div>
+    <button class="overlay-btn" style="max-width:200px" onclick="closeDomainDialogue()">[ ESC ] ADJOURN TRIAL</button>
+  </div>
+
   <!-- QUANTUM REWIND -->
   <div class="overlay-screen" id="rewind-screen">
     <div class="overlay-title">QUANTUM REWIND</div>
@@ -926,6 +943,12 @@ const SHIELD_BURST_RADIUS = 260;
 const SHIELD_BURST_DISABLE = 3000;
 const INFINITY_FOOD_PER_SEC = 0.5;
 const TIME_STOP_FOOD_PER_SEC = 5;
+const DOMAIN_EXPANSION_RADIUS = 420;
+const DOMAIN_EXPANSION_DURATION = 30000;   // 30s executioner sword window
+const DOMAIN_EXPANSION_COOLDOWN = 60000;   // 1min cooldown, starts after sword expires
+const DOMAIN_EXECUTION_DASH_SPEED = 20;
+const DOMAIN_EXECUTION_RANGE = 40;
+const DOMAIN_DIALOGUE_AFTER = 2500;        // ms before dialogue opens after domain forms
 const INFINITY_RADIUS_MIN = 60;
 const INFINITY_RADIUS_MAX = 160;
 const INFINITY_RADIUS_STEP = 5;
@@ -1039,6 +1062,8 @@ const WEAPON_DEFS=[
    desc:'Toggle a passive repulsion field that pushes incoming shots and raiders away from your ship.'},
   {id:'timestop',name:'Time Stop',cost:7500,cooldown:500,damage:0,passive:true,
    desc:'Toggle a temporal lock. Planets, freighters, escorts, raiders, and hostile fire freeze while food burns fast.'},
+  {id:'domainexpansion',name:'Deadly Sentencing',cost:15000,cooldown:500,damage:0,passive:true,
+   desc:'Domain Expansion: Deadly Sentencing. Envelop the battlefield in a courtroom of pitch black. Trapped raiders are bound and barred, and all weapons fall silent. Negotiate their sentence — if guilty, receive the Executioner\'s Sword.'}
 ];
 
 function defaultResearchState(){
@@ -1214,6 +1239,17 @@ function defaultState(){
     infinityActive:false,
     infinityRadius:INFINITY_RADIUS_DEFAULT,
     timeStopActive:false,
+    domainActive:false,
+    domainX:0,domainY:0,
+    domainExpiresAt:0,
+    domainCooldownUntil:0,
+    domainSword:false,
+    domainSwordUntil:0,
+    domainVerdict:null,
+    domainDialogueAt:0,
+    domainDefendantIndex:0,
+    domainPlea:null,
+    domainDashNext:0,
     pendingTimeStopFuel:0,
     pendingTimeStopCredits:0,
     tradeRaidTimer:30000,
@@ -1343,6 +1379,16 @@ function normalizeState(s){
   if(typeof s.infinityRadius!=='number'||s.infinityRadius<INFINITY_RADIUS_MIN||s.infinityRadius>INFINITY_RADIUS_MAX){
     s.infinityRadius=INFINITY_RADIUS_DEFAULT;
   }
+  if(typeof s.domainActive!=='boolean')s.domainActive=false;
+  if(typeof s.domainX!=='number')s.domainX=s.ship.x;
+  if(typeof s.domainY!=='number')s.domainY=s.ship.y;
+  if(typeof s.domainSword!=='boolean')s.domainSword=false;
+  if(typeof s.domainExpiresAt!=='number')s.domainExpiresAt=0;
+  if(typeof s.domainCooldownUntil!=='number')s.domainCooldownUntil=0;
+  if(typeof s.domainSwordUntil!=='number')s.domainSwordUntil=0;
+  if(typeof s.domainVerdict!=='string'||s.domainVerdict===null)s.domainVerdict=null;
+  if(typeof s.domainDialogueAt!=='number')s.domainDialogueAt=0;
+  if(typeof s.domainPlea!=='string'||s.domainPlea===null)s.domainPlea=null;
   s.fireHeld=false;
   s.lastPlayerSecondaryShot = s.lastPlayerSecondaryShot||0;
   if(s.tradeRaidTimer===undefined)s.tradeRaidTimer=45000;
@@ -2337,6 +2383,23 @@ function updateHUD(){
   if(weaponVal){
     const activeSuffix=(state.activeWeapon==='infinity'&&state.infinityActive)||(state.activeWeapon==='timestop'&&state.timeStopActive)?' ON':'';
     weaponVal.textContent=getWeaponDef(state.activeWeapon).name+activeSuffix;
+  }
+  const domVal=document.getElementById('domain-val');
+  if(domVal){
+    const nowD=performance.now();
+    if(state.domainSword){
+      domVal.textContent='⚔ SWORD '+Math.ceil(((state.domainSwordUntil||0)-nowD)/1000)+'s';
+      domVal.style.color='#ffd700';
+    } else if(state.domainActive){
+      domVal.textContent='ACTIVE';
+      domVal.style.color='#ffd700';
+    } else if(nowD<(state.domainCooldownUntil||0)){
+      domVal.textContent='CHARGING '+Math.ceil(((state.domainCooldownUntil||0)-nowD)/1000)+'s';
+      domVal.style.color='var(--red)';
+    } else {
+      domVal.textContent='READY';
+      domVal.style.color='var(--green)';
+    }
   }
   if(secondaryVal){
     secondaryVal.textContent=state.secondaryWeapon?getWeaponDef(state.secondaryWeapon).name:'None';
@@ -4536,18 +4599,330 @@ function toggleTimeStop(){
   return true;
 }
 
+function toggleDomainExpansion(){
+  if(!state)return false;
+  if(state.domainActive){
+    return true;
+  }
+  const now=performance.now();
+  if(now<(state.domainCooldownUntil||0)){
+    const left=Math.ceil(((state.domainCooldownUntil||0)-now)/1000);
+    notify(`Domain Expansion charging — ready in ${left}s.`, 'var(--red)');
+    return false;
+  }
+  const s=state.ship;
+  state.domainActive=true;
+  state.domainX=s.x;
+  state.domainY=s.y;
+  state.domainExpiresAt=now+DOMAIN_EXPANSION_DURATION;
+  state.domainDialogueAt=now+DOMAIN_DIALOGUE_AFTER;
+  state.domainVerdict=null;
+  state.domainSword=false;
+  state.domainSwordUntil=0;
+  state.domainDefendantIndex=0;
+  state.domainPlea=null;
+  // restore/keep active weapon so the sword automatically replaces attacks later
+  state.screenShake=Math.max(state.screenShake||0,20);
+  notify('DOMAIN EXPANSION — DEADLY SENTENCING', '#ffd700');
+  updateHUD();
+  saveState();
+  return true;
+}
+
+function boundToDomain(e){
+  if(!state||!state.domainActive)return;
+  const dx=e.x-state.domainX, dy=e.y-state.domainY;
+  const dist=Math.hypot(dx,dy);
+  const boundR=DOMAIN_EXPANSION_RADIUS-16;
+  if(dist>boundR&&dist>0){
+    e.x=state.domainX+dx/dist*boundR;
+    e.y=state.domainY+dy/dist*boundR;
+    e.vx=0;e.vy=0;
+  }
+}
+
+function domainTrapped(){
+  if(!state||!state.domainActive)return [];
+  const list=[];
+  for(const e of (state.enemies||[])){
+    if(e&&e.hp>0&&Math.hypot(e.x-state.domainX,e.y-state.domainY)<DOMAIN_EXPANSION_RADIUS)list.push({t:e,kind:'enemy'});
+  }
+  for(const r of (state.tradeRaiders||[])){
+    if(r&&r.hp>0&&Math.hypot(r.x-state.domainX,r.y-state.domainY)<DOMAIN_EXPANSION_RADIUS)list.push({t:r,kind:'raider'});
+  }
+  return list;
+}
+
+const DOMAIN_CRIMES=[
+  'violation of the Outer Space Treaty, Article I — unauthorized appropriation of celestial territory',
+  'the unlawful discharge of weaponry within a designated protected void corridor',
+  'piracy against registered civilian freighters of the Colonial Accord',
+  'unregistered resource extraction from a sovereign celestial body',
+  'reckless endangerment of a sovereign colony and its civilian population',
+  'contempt of the Interstellar Court for repeated violations of the Non-Interference Pact',
+];
+
+function domainPickDefendant(){
+  const trapped=domainTrapped();
+  if(trapped.length===0)return null;
+  const idx=(state.domainDefendantIndex||0)%trapped.length;
+  state.domainDefendantIndex=idx+1;
+  return trapped[idx];
+}
+
+function openDomainDialogue(){
+  if(!state||!state.domainActive||state.domainVerdict)return;
+  const def=domainPickDefendant();
+  if(def){
+    state._domainDefendant=def;
+    state.domainPlea=domainRollPlea();
+  } else {
+    state._domainDefendant=null;
+    state.domainPlea=null;
+  }
+  updateDomainDialogueUI();
+  document.getElementById('domain-screen').classList.add('open');
+  gamePaused=true;
+}
+
+function domainRollPlea(){
+  const pleas=['confess','silent','deny'];
+  return pleas[Math.floor(Math.random()*pleas.length)];
+}
+
+window.closeDomainDialogue=function(){
+  document.getElementById('domain-screen').classList.remove('open');
+  if(gameRunning&&!gameOver&&!state.rewindPending)gamePaused=false;
+  if(state&&state.domainActive){
+    state.domainDialogueAt=Math.max((state.domainDialogueAt||0),performance.now()+3000);
+  }
+};
+
+function domainDefendantLabel(def){
+  if(!def)return 'The accused has fled the courtroom.';
+  const isEnemy=def.kind==='enemy';
+  const id=isEnemy?'RAIDER '+Math.abs((def.t.id||'').split('').reduce((a,c)=>a+c.charCodeAt(0),17)%1000):'ESCORT RAIDER';
+  return `${id}`;
+}
+
+function updateDomainDialogueUI(){
+  const def=state._domainDefendant||null;
+  const plea=state.domainPlea||null;
+  document.getElementById('domain-defendant').textContent=def?`THE ACCUSED — ${domainDefendantLabel(def)}`:'THE ACCUSED — (none)';
+  const crime=DOMAIN_CRIMES[(state.tick%DOMAIN_CRIMES.length)];
+  if(def){
+    state._domainCrime=crime;
+  }
+  document.getElementById('domain-crime').textContent=def?`Charged with ${crime}.`:'No raider present to prosecute.';
+  let pleaLine='The accused refuses to give testimony.';
+  if(plea==='confess') pleaLine='Accused: "I... I admit it. The covetous crimes are mine. I confess to this court."';
+  else if(plea==='silent') pleaLine='Accused: "..." (The defendant stands mute, refusing to answer the charge.)';
+  else if(plea==='deny') pleaLine='Accused: "Lies! I deny all wrongdoing. You hold no proof, judge."';
+  document.getElementById('domain-line').textContent=pleaLine;
+  document.getElementById('domain-reserves').textContent=`${Math.floor(state.credits)}¢ · ${Math.floor(state.food)} food · Judge Higuruma awaits your ruling`;
+  document.getElementById('domain-msg').textContent='Now read the testimony and deliver the verdict that matches it.';
+  const actions=document.getElementById('domain-actions');
+  actions.innerHTML='';
+  if(!def){
+    const btn=document.createElement('button');
+    btn.className='dialogue-btn';
+    btn.textContent='No one to sentence. Disperse the domain.';
+    btn.addEventListener('click',()=>endDomain(performance.now()));
+    actions.appendChild(btn);
+    return;
+  }
+  const options=[
+    {id:'confess',label:'Player: "The accused confessed before this court. GUILTY."',req:'Best when the accused confessed',cls:''},
+    {id:'silent',label:'Player: "Silence is an admission of guilt. GUILTY."',req:'Best when the accused stayed silent',cls:''},
+    {id:'deny',label:'Player: "Without proof, the denial stands. NOT GUILTY."',req:'Best when the accused denied',cls:'danger'},
+  ];
+  for(const opt of options){
+    const btn=document.createElement('button');
+    btn.className='dialogue-btn'+opt.cls;
+    btn.innerHTML=`${opt.label}<span class="dialogue-req">${opt.req}</span>`;
+    btn.addEventListener('click',()=>resolveDomainVerdict(opt.id));
+    actions.appendChild(btn);
+  }
+}
+
+function correctPleaResponse(plea){
+  return plea==='confess' ? 'confess' : plea==='silent' ? 'silent' : 'deny';
+}
+
+function grantExecutionerSword(now){
+  if(!state)return;
+  state.domainVerdict='guilty';
+  state.domainSword=true;
+  state.domainSwordUntil=(now||performance.now())+DOMAIN_EXPANSION_DURATION;
+  collapseDomain(now);
+  notify('⚖ GUILTY. The Executioner\'s Sword is granted — the domain collapses.', '#ffd700');
+  updateHUD();saveState();
+}
+
+function collapseDomain(now){
+  if(!state)return;
+  state.domainActive=false;
+  state.domainVerdict=null;
+  state.domainDialogueAt=0;
+  const scr=document.getElementById('domain-screen');
+  if(scr)scr.classList.remove('open');
+  if(gameRunning&&!gameOver&&!state.rewindPending)gamePaused=false;
+  state.screenShake=Math.max(state.screenShake||0,14);
+}
+
+function resolveDomainVerdict(id){
+  if(!state||!state.domainActive)return;
+  const plea=state.domainPlea;
+  const correct=correctPleaResponse(plea);
+  const now=performance.now();
+  if(id===correct){
+    if(id==='deny'){
+      // Correctly honoring a denial -> acquittal, no sword; full cooldown applies
+      state.domainVerdict='acquit';
+      collapseDomain(now);
+      state.domainCooldownUntil=now+DOMAIN_EXPANSION_COOLDOWN;
+      notify('⚖ NOT GUILTY. The accused is acquitted — the domain collapses. Recharging (60s).', 'var(--text)');
+    } else {
+      grantExecutionerSword(now);
+    }
+  } else {
+    // Mismatched ruling -> domain collapses without reward; full cooldown applies
+    state.domainVerdict='miscarriage';
+    collapseDomain(now);
+    state.domainCooldownUntil=now+DOMAIN_EXPANSION_COOLDOWN;
+    notify('⚖ MISJUDGED. A wrongful ruling — the domain collapses without reward. Recharging (60s).', 'var(--red)');
+  }
+  updateHUD();saveState();
+}
+
+function performExecutionerDash(){
+  if(!state||!state.domainSword)return false;
+  const now=performance.now();
+  if(now<(state.domainDashNext||0))return false;
+  state.domainDashNext=now+220;
+  const s=state.ship;
+  // Dash forward along ship's facing
+  const dirX=Math.cos(s.angle), dirY=Math.sin(s.angle);
+  s.vx+=dirX*DOMAIN_EXECUTION_DASH_SPEED;
+  s.vy+=dirY*DOMAIN_EXECUTION_DASH_SPEED;
+  state.screenShake=Math.max(state.screenShake||0,8);
+  // Obliterate every target in the forward path
+  const struck=[];
+  for(const e of (state.enemies||[])){
+    if(e.hp<=0)continue;
+    const toX=e.x-s.x,toY=e.y-s.y;
+    const forward=toX*dirX+toY*dirY;
+    if(forward<0)continue;
+    const lateral=Math.abs(toX*dirY-toY*dirX);
+    if(lateral<DOMAIN_EXECUTION_RANGE){
+      e.hp=0;
+      struck.push({t:e,kind:'enemy'});
+    }
+  }
+  for(const r of (state.tradeRaiders||[])){
+    if(r.hp<=0)continue;
+    const toX=r.x-s.x,toY=r.y-s.y;
+    const forward=toX*dirX+toY*dirY;
+    if(forward<0)continue;
+    const lateral=Math.abs(toX*dirY-toY*dirX);
+    if(lateral<DOMAIN_EXECUTION_RANGE){
+      r.hp=0;
+      struck.push({t:r,kind:'raider'});
+    }
+  }
+  if(struck.length){
+    state.screenShake=Math.max(state.screenShake||0,16);
+    state.hitStopTimer=Math.max(state.hitStopTimer||0,8);
+    state.ramEffects.push({
+      x:s.x+dirX*30,y:s.y+dirY*30,created:now,life:320,accent:'#ffd700',
+      bolts:makeBlackFlashBolts(s.x+dirX*30,s.y+dirY*30,10),
+    });
+    for(const st of struck){
+      const t=st.t;
+      if(t._bountyPaid)continue;
+      t._bountyPaid=true;
+      const bounty=st.kind==='enemy'?40:30;
+      state.credits+=bounty;
+      state.raidersDestroyedSession=(state.raidersDestroyedSession||0)+1;
+      notify(`⚔ Executioner's Sword obliterated a raider! +${bounty}¢`, '#ffd700');
+    }
+    updateHUD();saveState();
+  } else {
+    notify('⚔ Dash to cut. Position yourself on the raider\'s line.', '#ffd700');
+  }
+  return true;
+}
+
+function updateDomain(dt){
+  if(!state)return;
+  const now=performance.now();
+  // Sword expiry -> begin the 1-minute cooldown (works even after the arena collapsed)
+  if(state.domainSword&&now>=(state.domainSwordUntil||0)){
+    state.domainSword=false;
+    state.domainCooldownUntil=now+DOMAIN_EXPANSION_COOLDOWN;
+    notify('The Executioner\'s Sword fades. Domain recharging (60s).', '#9b4dff');
+    updateHUD();saveState();
+  }
+  if(!state.domainActive)return;
+  // Open dialogue after formation delay if verdict not yet reached
+  if(!state.domainVerdict&&now>=(state.domainDialogueAt||0)&&now<(state.domainExpiresAt||0)){
+    const scr=document.getElementById('domain-screen');
+    if(scr&&!scr.classList.contains('open'))openDomainDialogue();
+  }
+  // Handle trapped raiders: bind them inside the arena, disarm attacks
+  for(const e of (state.enemies||[])){
+    if(e.hp<=0)continue;
+    boundToDomain(e);
+    e.state='roam';
+    e.vx*=0.2;e.vy*=0.2;
+    e.blindUntil=now+ (state.domainExpiresAt-now)+1000;
+  }
+  for(const r of (state.tradeRaiders||[])){
+    if(r.hp<=0)continue;
+    boundToDomain(r);
+    r.vx*=0.2;r.vy*=0.2;
+    r.blindUntil=now+ (state.domainExpiresAt-now)+1000;
+  }
+  // Domain expired without a verdict -> collapse with no sword
+  if(now>=(state.domainExpiresAt||0)){
+    endDomain(now);
+  }
+}
+
+function endDomain(now){
+  if(!state)return;
+  collapseDomain(now);
+  state.domainSword=false;
+  state.domainCooldownUntil=(now||performance.now())+DOMAIN_EXPANSION_COOLDOWN;
+  notify('DEADLY SENTENCING dispelled. Domain recharging (60s).', '#9b4dff');
+  updateHUD();saveState();
+}
+
 function fireLaser(){
   if(!state||!gameRunning||gameOver||gamePaused) return;
   const weaponId=state.activeWeapon||'laser';
   const def=getWeaponDef(weaponId);
   const now = performance.now();
   if(now - (state.lastPlayerShot||0) < getWeaponCooldown(weaponId)) return;
+  if(state.domainSword){
+    if(performExecutionerDash())state.lastPlayerShot=now;
+    return;
+  }
+  if(state.domainActive){
+    // Inside the domain, all attacks are forbidden until the sword is granted.
+    notify('Attacks are forbidden inside the domain. Render a verdict.', 'var(--red)');
+    return;
+  }
   if(weaponId==='infinity'){
     if(toggleInfinity())state.lastPlayerShot=now;
     return;
   }
   if(weaponId==='timestop'){
     if(toggleTimeStop())state.lastPlayerShot=now;
+    return;
+  }
+  if(weaponId==='domainexpansion'){
+    if(toggleDomainExpansion())state.lastPlayerShot=now;
     return;
   }
   if(weaponId==='solar'){
@@ -5050,7 +5425,9 @@ function updateEnemies(dt, now){
 
     // ── Enemy fires only when actively attacking (retaliate-triggered) ──
     if(e.state==='attack' && distToPlayer < ENEMY_AGGRO_RANGE*0.9){
-      if(now - e.lastShot > ENEMY_LASER_CD){
+      // Inside the domain, all attacks are forbidden — enemies cannot fire.
+      const inDomain=state.domainActive&&Math.hypot(e.x-state.domainX,e.y-state.domainY)<DOMAIN_EXPANSION_RADIUS;
+      if(!inDomain&&now - e.lastShot > ENEMY_LASER_CD){
         e.lastShot = now;
         state.enemyLasers.push(makeEnemyLaser(e));
       }
@@ -5649,6 +6026,7 @@ function update(dt){
     updateSolarBeam(dt);
   }
   updateInfinity(dt);
+  updateDomain(dt);
 
   if(mouseAimMode){
     // Smoothly snap ship angle toward the mouse cursor in world-space
@@ -5931,6 +6309,18 @@ function draw(){
     drawMoon(ctx,m,getMoonPos(m),state.tick);
   }
 
+  // Deadly Sentencing domain backdrop — pitch black interior over the bound arena
+  if(state.domainActive){
+    const dx=state.domainX, dy=state.domainY, R=DOMAIN_EXPANSION_RADIUS;
+    ctx.save();
+    const g=ctx.createRadialGradient(dx,dy,R*0.3,dx,dy,R);
+    g.addColorStop(0,'rgba(0,0,0,0.98)');
+    g.addColorStop(0.75,'rgba(0,0,0,0.96)');
+    g.addColorStop(1,'rgba(0,0,0,0.9)');
+    ctx.beginPath();ctx.arc(dx,dy,R,0,Math.PI*2);ctx.fillStyle=g;ctx.fill();
+    ctx.restore();
+  }
+
   // Harvest range rings (green) for colonized farm planets
   for(const b of[...state.planets,...state.moons]){
     if(!b.colonized)continue;
@@ -6075,6 +6465,28 @@ function draw(){
     ctx.restore();
   }
   drawRamAfterimages(ctx);
+  if(state.domainActive){
+    const dx=state.domainX, dy=state.domainY, R=DOMAIN_EXPANSION_RADIUS;
+    const pulse=0.5+Math.sin(state.tick*0.06)*0.5;
+    ctx.save();
+    // golden boundary rings
+    ctx.beginPath();ctx.arc(dx,dy,R,0,Math.PI*2);
+    ctx.strokeStyle=`rgba(255,215,0,${0.55+0.35*pulse})`;
+    ctx.lineWidth=3;ctx.shadowColor='#ffd700';ctx.shadowBlur=22;ctx.stroke();
+    ctx.beginPath();ctx.arc(dx,dy,R+8,0,Math.PI*2);
+    ctx.strokeStyle=`rgba(255,215,0,${0.22+0.16*pulse})`;
+    ctx.lineWidth=1.4;ctx.setLineDash([14,10]);ctx.stroke();ctx.setLineDash([]);
+    // inner gavel ring
+    ctx.beginPath();ctx.arc(dx,dy,R*0.82,0,Math.PI*2);
+    ctx.strokeStyle=`rgba(255,200,80,${0.10+0.08*pulse})`;
+    ctx.lineWidth=1;ctx.setLineDash([4,16]);ctx.stroke();ctx.setLineDash([]);
+    ctx.restore();
+    // faint golden ambient inside the arena
+    const ag=ctx.createRadialGradient(dx,dy,0,dx,dy,R);
+    ag.addColorStop(0,`rgba(80,60,0,${0.10+0.05*pulse})`);
+    ag.addColorStop(1,'rgba(80,60,0,0)');
+    ctx.beginPath();ctx.arc(dx,dy,R,0,Math.PI*2);ctx.fillStyle=ag;ctx.fill();
+  }
   for(const f of (state.freighters||[]))drawFreighter(ctx,f,state.tick);
   drawShip(ctx,state.ship);
 
@@ -6751,15 +7163,33 @@ function drawMoon(ctx,m,pos,tick){
 }
 
 function drawShip(ctx,s){
+  const swordActive=state&&state.domainSword;
+  const now=performance.now();
+  const goldPulse=swordActive?(0.5+0.5*Math.sin(now*0.02)):0;
   ctx.save();ctx.translate(s.x,s.y);ctx.rotate(s.angle);
-  const g=ctx.createRadialGradient(0,0,0,0,0,20);
-  g.addColorStop(0,'rgba(0,212,255,0.15)');g.addColorStop(1,'transparent');
-  ctx.beginPath();ctx.arc(0,0,20,0,Math.PI*2);ctx.fillStyle=g;ctx.fill();
+  const g=ctx.createRadialGradient(0,0,0,0,0,20+goldPulse*22);
+  g.addColorStop(0,swordActive?`rgba(255,215,0,${0.35+0.35*goldPulse})`:'rgba(0,212,255,0.15)');
+  g.addColorStop(1,'transparent');
+  ctx.beginPath();ctx.arc(0,0,20+goldPulse*22,0,Math.PI*2);ctx.fillStyle=g;ctx.fill();
+  // golden vortex around the ship when the Executioner's Sword is held
+  if(swordActive){
+    ctx.save();
+    ctx.rotate(performance.now()/1000*1.6);
+    ctx.beginPath();ctx.arc(0,0,11+10*goldPulse,0,Math.PI*2);
+    ctx.strokeStyle=`rgba(255,215,0,${0.5+0.4*goldPulse})`;ctx.lineWidth=1.6;ctx.stroke();
+    ctx.beginPath();ctx.arc(0,0,18+12*goldPulse,0,Math.PI*2);
+    ctx.strokeStyle=`rgba(255,200,80,${0.22+0.25*goldPulse})`;ctx.lineWidth=1;ctx.setLineDash([3,9]);ctx.stroke();ctx.setLineDash([]);
+    ctx.restore();
+  }
   ctx.beginPath();ctx.moveTo(14,0);ctx.lineTo(-10,-7);ctx.lineTo(-6,0);ctx.lineTo(-10,7);ctx.closePath();
-  ctx.fillStyle='#0d2035';ctx.strokeStyle='#00d4ff';ctx.lineWidth=1.5;ctx.fill();ctx.stroke();
-  ctx.beginPath();ctx.ellipse(4,0,5,3,0,0,Math.PI*2);ctx.fillStyle='rgba(0,212,255,0.6)';ctx.fill();
+  ctx.fillStyle=swordActive?`rgb(${78+90*goldPulse},${48+64*goldPulse},0)`:'#0d2035';
+  ctx.strokeStyle=swordActive?`rgba(255,215,0,${0.7+0.3*goldPulse})`:'#00d4ff';
+  ctx.lineWidth=1.5;ctx.fill();ctx.stroke();
+  ctx.beginPath();ctx.ellipse(4,0,5,3,0,0,Math.PI*2);ctx.fillStyle=swordActive?'rgba(255,215,0,0.85)':'rgba(0,212,255,0.6)';ctx.fill();
   ctx.beginPath();ctx.moveTo(-4,-7);ctx.lineTo(-12,-14);ctx.lineTo(-12,-6);ctx.closePath();
-  ctx.fillStyle='#1a4060';ctx.strokeStyle='#00d4ff';ctx.lineWidth=1;ctx.fill();ctx.stroke();
+  ctx.fillStyle=swordActive?`rgb(${90+70*goldPulse},${70+50*goldPulse},0)`:'#1a4060';
+  ctx.strokeStyle=swordActive?`rgba(255,215,0,${0.7+0.3*goldPulse})`:'#00d4ff';
+  ctx.lineWidth=1;ctx.fill();ctx.stroke();
   ctx.beginPath();ctx.moveTo(-4,7);ctx.lineTo(-12,14);ctx.lineTo(-12,6);ctx.closePath();
   ctx.fill();ctx.stroke();
   ctx.restore();
